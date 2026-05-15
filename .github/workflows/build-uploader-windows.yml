@@ -1,14 +1,21 @@
-name: Build Windows EXE
+name: Build Uploader Windows EXE
 
 on:
+  workflow_dispatch:
   push:
     tags:
-      - "v*"
-  workflow_dispatch:
+      - "uploader-v*"
+    paths:
+      - "Uploader/**"
+      - ".github/workflows/build-uploader-windows.yml"
 
 jobs:
   build-windows:
     runs-on: windows-latest
+
+    defaults:
+      run:
+        working-directory: Uploader
 
     steps:
       - name: Checkout code
@@ -32,4 +39,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: tamasha-uploader-windows
-          path: dist/uploader.exe
+          path: Uploader/dist/uploader.exe
