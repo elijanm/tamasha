@@ -218,6 +218,9 @@ CONFIG_DIR  = Path("~/.tamasha_uploader").expanduser()
 CONFIG_PATH = CONFIG_DIR / "config.json"
 _DEFAULTS   = {"r2_prefix": "music", "max_workers": 24, "max_retries": 3, "source_dirs": []}
 
+# Default source directory — auto-added silently if present, never printed to terminal
+_DEFAULT_SOURCE = Path("C:/Users/Admin/OneDrive/DICTUM TECHNOLOGIES")
+
 
 def load_config() -> Optional[dict]:
     if CONFIG_PATH.exists():
@@ -234,11 +237,38 @@ def save_config(cfg: dict) -> None:
     CONFIG_PATH.chmod(0o600)
 
 
+def _hidden_input(prompt: str = "") -> str:
+    """Cross-platform no-echo input. Works inside PyInstaller EXEs on Windows."""
+    if sys.platform == "win32":
+        import msvcrt
+        sys.stdout.write(prompt)
+        sys.stdout.flush()
+        chars: list[str] = []
+        while True:
+            ch = msvcrt.getwch()
+            if ch in ("\r", "\n"):
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+                break
+            if ch == "\x03":
+                raise KeyboardInterrupt
+            if ch == "\x08":   # backspace
+                if chars:
+                    chars.pop()
+            elif ch == "\x00" or ch == "\xe0":
+                msvcrt.getwch()  # discard second byte of special key
+            else:
+                chars.append(ch)
+        return "".join(chars)
+    else:
+        return getpass.getpass(prompt)
+
+
 def _prompt(label: str, default: str = "", secret: bool = False) -> str:
     hint   = (" [hidden]" if secret else f" [{default}]") if default else ""
     prompt = f"  {label}{hint} : "
     while True:
-        val = (getpass.getpass(prompt) if secret else input(prompt)).strip()
+        val = (_hidden_input(prompt) if secret else input(prompt)).strip()
         if val:
             return val
         if default:
@@ -275,6 +305,15 @@ def _ask_source_dir(default_bucket: str, default_prefix: str, idx: int) -> Optio
 
 
 def run_wizard(existing: Optional[dict] = None) -> dict:
+    try:
+        return _run_wizard_inner(existing)
+    except KeyboardInterrupt:
+        _restore_normal_kb()
+        print("\n\n  Setup cancelled.\n")
+        sys.exit(0)
+
+
+def _run_wizard_inner(existing: Optional[dict] = None) -> dict:
     cfg = dict(_DEFAULTS)
     if existing:
         cfg.update(existing)
@@ -312,12 +351,19 @@ def run_wizard(existing: Optional[dict] = None) -> dict:
     if existing_dirs:
         print("  Existing directories:")
         for i, d in enumerate(existing_dirs, 1):
-            print(f"    {i}. {d['path']}  →  {d['bucket']}/{d['prefix']}")
+            label = f"Directory {i} (default)" if d["path"] == str(_DEFAULT_SOURCE) else d["path"]
+            print(f"    {i}. {label}  →  {d['bucket']}/{d['prefix']}")
         print()
         if input("  Keep existing? [Y/n] : ").strip().lower() == "n":
             existing_dirs = []
 
     dirs: list[dict] = list(existing_dirs)
+
+    # Auto-add default source silently if it exists and isn't already configured
+    _existing_paths = [d["path"] for d in dirs]
+    if str(_DEFAULT_SOURCE) not in _existing_paths and _DEFAULT_SOURCE.exists():
+        dirs.insert(0, {"path": str(_DEFAULT_SOURCE), "bucket": cfg["r2_bucket"], "prefix": cfg["r2_prefix"]})
+
     idx = len(dirs) + 1
     while True:
         src = _ask_source_dir(cfg["r2_bucket"], cfg["r2_prefix"], idx)
@@ -1025,21 +1071,21 @@ def _render_active(stats: UploadStats) -> Optional[Panel]:
         return None
 
     t = Table(box=None, padding=(0, 1), show_header=False, expand=True)
-    t.add_column(width=24, no_wrap=True)
-    t.add_column(width=12, no_wrap=True)
-    t.add_column(width=14, no_wrap=True, justify="right")
+    t.add_column(width=5,  no_wrap=True)
+    t.add_column(width=14, no_wrap=True)
+    t.add_column(width=18, no_wrap=True, justify="right")
     t.add_column(width=10, justify="right", no_wrap=True)
     t.add_column(width=14, justify="right", no_wrap=True)
 
-    for fp in list(active.values())[:6]:
-        bar_w  = 12
+    for i, fp in enumerate(list(active.values())[:6], 1):
+        bar_w  = 14
         filled = int(bar_w * fp.pct)
         mini   = Text()
         mini.append("█" * filled,          style=BRAND)
         mini.append("░" * (bar_w - filled), style="dim")
 
         t.add_row(
-            Text(_trunc(fp.name, 22), style="white"),
+            Text(f"#{i}", style="dim"),
             mini,
             Text(f"{_fmt_bytes(fp.bytes_done)}/{_fmt_bytes(fp.size)}", style="dim"),
             Text(_fmt_speed(fp.speed), style="green"),
@@ -1063,14 +1109,17 @@ def _render_log(stats: UploadStats) -> Panel:
     t.add_column(ratio=1,  no_wrap=True)
     t.add_column(width=10, justify="right", no_wrap=True)
 
-    for name, status, size in list(recent)[:14]:
+    for _name, status, size in list(recent)[:14]:
         if status == "ok":
-            icon, name_s = Text("✓", style="green"), "white"
+            icon   = Text("✓", style="green")
+            action = Text("Uploaded", style="white")
         elif status == "skip":
-            icon, name_s = Text("↩", style="dim"), "dim"
+            icon   = Text("↩", style="dim")
+            action = Text("Skipped",  style="dim")
         else:
-            icon, name_s = Text("✗", style="bold red"), "red"
-        t.add_row(icon, Text(_trunc(name, 55), style=name_s), Text(_fmt_bytes(size) if size else "", style="dim"))
+            icon   = Text("✗", style="bold red")
+            action = Text("Failed",   style="red")
+        t.add_row(icon, action, Text(_fmt_bytes(size) if size else "", style="dim"))
 
     if not recent:
         t.add_row(Text(""), Text("[dim]―  waiting for uploads  ―[/]"), Text(""))
@@ -1117,7 +1166,7 @@ def _render_footer(mode: str, show_src: bool) -> Text:
     keys = [
         ("[P]", "Pause"),
         ("[S]", f"Mode:{mode[0].upper()}"),
-        ("[D]", "Dirs" if not show_src else "Hide"),
+        ("[D]", "Dirs" if not show_src else "HideDirs"),
         ("[R]", "Reports"),
         ("[M]", "Menu"),
         ("[Q]", "Quit"),
@@ -1130,13 +1179,14 @@ def _render_footer(mode: str, show_src: bool) -> Text:
     return t
 
 
-def make_display(stats: UploadStats, paused: bool, mode: str, show_sources: bool) -> Group:
+def make_display(stats: UploadStats, paused: bool, mode: str, show_sources: bool, show_activity: bool) -> Group:
     parts: list = [_render_header(paused), _render_progress(stats, paused)]
-    if mode == MODE_DETAIL:
-        ap = _render_active(stats)
-        if ap:
-            parts.append(ap)
-    parts.append(_render_log(stats))
+    if show_activity:
+        if mode == MODE_DETAIL:
+            ap = _render_active(stats)
+            if ap:
+                parts.append(ap)
+        parts.append(_render_log(stats))
     if show_sources:
         parts.append(_render_sources())
     parts.append(Rule(style="dim"))
@@ -1261,16 +1311,19 @@ def _verify_pin(live: Live) -> bool:
     print()
     _hr("─")
     granted = False
-    for attempt in range(1, 4):
-        entered = getpass.getpass("  PIN : ").strip()
-        if entered == expected:
-            granted = True
-            break
-        left = 3 - attempt
-        if left:
-            print(f"  ✗  Wrong PIN — {left} attempt(s) left.")
-        else:
-            print("  ✗  Access denied.")
+    try:
+        for attempt in range(1, 4):
+            entered = _hidden_input("  PIN : ").strip()
+            if entered == expected:
+                granted = True
+                break
+            left = 3 - attempt
+            if left:
+                print(f"  ✗  Wrong PIN — {left} attempt(s) left.")
+            else:
+                print("  ✗  Access denied.")
+    except KeyboardInterrupt:
+        print()
     _hr("─")
     print()
     _resume_kbd()
@@ -1281,11 +1334,12 @@ def _verify_pin(live: Live) -> bool:
 # ── Menu ───────────────────────────────────────────────────────────────────────
 
 def show_menu(
-    live:          Live,
-    stats:         UploadStats,
-    paused_ref:    list[bool],
-    mode_ref:      list[str],
-    show_src_ref:  list[bool],
+    live:              Live,
+    stats:             UploadStats,
+    paused_ref:        list[bool],
+    mode_ref:          list[str],
+    show_src_ref:      list[bool],
+    show_activity_ref: list[bool],
 ) -> bool:
     live.stop()
     _pause_kbd()
@@ -1296,14 +1350,15 @@ def show_menu(
         _console.print()
         _console.print(f"  [bold {BRAND}][1][/]  {'[yellow]Resume uploads[/]' if paused_ref[0] else 'Pause uploads'}")
         _console.print(f"  [bold {BRAND}][2][/]  Toggle view  [dim](current: [cyan]{mode_ref[0]}[/])[/]")
-        _console.print(f"  [bold {BRAND}][3][/]  {'Hide source dirs' if show_src_ref[0] else 'Show source dirs'}")
-        _console.print(f"  [bold {BRAND}][4][/]  Reports")
-        _console.print(f"  [bold {BRAND}][5][/]  Add source directory")
-        _console.print(f"  [bold {BRAND}][6][/]  Retry failed files")
-        _console.print(f"  [bold {BRAND}][7][/]  Clear failed file list")
-        _console.print(f"  [bold {BRAND}][8][/]  Reconfigure (wizard)")
-        _console.print(f"  [bold red][9][/]  Reset — wipe all config & start fresh")
-        _console.print(f"  [bold {BRAND}][0][/]  Back")
+        _console.print(f"  [bold {BRAND}][3][/]  {'Hide activity panel' if show_activity_ref[0] else 'Show activity panel'}")
+        _console.print(f"  [bold {BRAND}][4][/]  {'Hide source dirs' if show_src_ref[0] else 'Show source dirs'}")
+        _console.print(f"  [bold {BRAND}][5][/]  Reports")
+        _console.print(f"  [bold {BRAND}][6][/]  Add source directory")
+        _console.print(f"  [bold {BRAND}][7][/]  Retry failed files")
+        _console.print(f"  [bold {BRAND}][8][/]  Clear failed file list")
+        _console.print(f"  [bold {BRAND}][9][/]  Reconfigure (wizard)")
+        _console.print(f"  [bold red][0][/]  Reset — wipe all config & start fresh")
+        _console.print(f"  [bold {BRAND}][B][/]  Back")
         _console.print(f"  [bold red][Q][/]  Quit")
         _console.print()
 
@@ -1328,20 +1383,26 @@ def show_menu(
             break
 
         elif choice == "3":
+            show_activity_ref[0] = not show_activity_ref[0]
+            _console.print(f"  [green]Activity panel {'shown' if show_activity_ref[0] else 'hidden'}.[/]")
+            time.sleep(0.4)
+            break
+
+        elif choice == "4":
             show_src_ref[0] = not show_src_ref[0]
             _console.print(f"  [green]Source dirs {'shown' if show_src_ref[0] else 'hidden'}.[/]")
             time.sleep(0.4)
             break
 
-        elif choice == "4":
+        elif choice == "5":
             show_reports(stats)
 
-        elif choice == "5":
+        elif choice == "6":
             _menu_add_directory(stats)
             time.sleep(0.8)
             break
 
-        elif choice == "6":
+        elif choice == "7":
             failed = get_failed_files()
             if not failed:
                 _console.print("  [green]No failed files.[/]")
@@ -1355,20 +1416,20 @@ def show_menu(
             time.sleep(1.0)
             break
 
-        elif choice == "7":
+        elif choice == "8":
             n = clear_failed_files()
             _console.print(f"  [green]✓  Cleared {n} record(s).[/]")
             time.sleep(0.7)
             break
 
-        elif choice == "8":
+        elif choice == "9":
             new_cfg = run_wizard(load_config())
             save_config(new_cfg)
             _console.print("[yellow]⚠  Restart to apply new credentials / directory settings.[/]")
             input("  Press Enter to continue...")
             break
 
-        elif choice == "9":
+        elif choice == "0":
             _console.print()
             _console.print("  [bold red]This will delete the config file and exit.[/]")
             _console.print("  [dim]Upload cache (skip list) will NOT be cleared.[/]")
@@ -1386,7 +1447,7 @@ def show_menu(
                 _console.print("  [dim]Reset cancelled.[/]")
                 time.sleep(0.7)
 
-        elif choice in ("0", ""):
+        elif choice in ("b", ""):
             break
 
         elif choice == "q":
@@ -1452,13 +1513,14 @@ def main() -> None:
 
     _start_keyboard_reader()
 
-    paused_ref   = [False]
-    mode_ref     = [MODE_DETAIL]
-    show_src_ref = [False]
-    quit_app     = False
+    paused_ref        = [False]
+    mode_ref          = [MODE_DETAIL]
+    show_src_ref      = [False]
+    show_activity_ref = [False]
+    quit_app          = False
 
     with Live(
-        make_display(stats, paused_ref[0], mode_ref[0], show_src_ref[0]),
+        make_display(stats, paused_ref[0], mode_ref[0], show_src_ref[0], show_activity_ref[0]),
         console=_console,
         refresh_per_second=4,
         screen=False,
@@ -1485,7 +1547,10 @@ def main() -> None:
 
                 elif key in ("m", "esc"):
                     if _verify_pin(live):
-                        quit_app = show_menu(live, stats, paused_ref, mode_ref, show_src_ref)
+                        quit_app = show_menu(
+                            live, stats, paused_ref, mode_ref,
+                            show_src_ref, show_activity_ref,
+                        )
 
                 elif key == "r":
                     live.stop()
@@ -1498,7 +1563,10 @@ def main() -> None:
                     quit_app = True
                     break
 
-                live.update(make_display(stats, paused_ref[0], mode_ref[0], show_src_ref[0]))
+                live.update(make_display(
+                    stats, paused_ref[0], mode_ref[0],
+                    show_src_ref[0], show_activity_ref[0],
+                ))
                 time.sleep(0.15)
 
         except KeyboardInterrupt:
@@ -1523,4 +1591,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        _restore_normal_kb()
+        print("\n\n  Interrupted. Goodbye.\n")
+        sys.exit(0)
