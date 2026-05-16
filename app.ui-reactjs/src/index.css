@@ -1,0 +1,203 @@
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 20 14.3% 4.1%;
+    --foreground: 0 0% 95%;
+    --card: 24 9.8% 10%;
+    --card-foreground: 0 0% 95%;
+    --popover: 0 0% 9%;
+    --popover-foreground: 0 0% 95%;
+    --primary: 263 100% 62%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 15%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 12 6.5% 15.1%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 85.7% 97.3%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 263 100% 62%;
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    box-sizing: border-box;
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-background text-foreground font-body;
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  #root {
+    width: 100%;
+    min-height: 100vh;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-stone-800 rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-stone-700;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: 'Syne', sans-serif;
+  }
+  .font-body {
+    font-family: 'DM Sans', sans-serif;
+  }
+  .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+/* ── Simple / Light theme ────────────────────────────────── */
+[data-theme="simple"] {
+  --background: 40 20% 98%;        /* warm white #faf9f7 */
+  --foreground: 20 14.3% 10%;      /* near black */
+  --card: 0 0% 100%;               /* white */
+  --card-foreground: 20 14.3% 10%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 20 14.3% 10%;
+  --primary: 354 80% 43%;          /* Pan-African red #c41e2a */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 40 20% 94%;
+  --secondary-foreground: 20 14.3% 10%;
+  --muted: 40 10% 92%;
+  --muted-foreground: 25 10% 40%;
+  --accent: 40 20% 92%;
+  --accent-foreground: 20 14.3% 10%;
+  --border: 30 10% 88%;
+  --input: 30 10% 88%;
+  --ring: 354 80% 43%;
+
+  font-family: 'Inter', 'DM Sans', sans-serif;
+}
+
+/* ── Simple theme: global overrides (all surfaces)
+   Everything goes light — sidebar, main, player, auth.
+   Uses !important to beat Tailwind's utility specificity.
+   ─────────────────────────────────────────────────────────── */
+
+/* Backgrounds */
+[data-theme="simple"] .bg-stone-950  { background-color: #ffffff !important; }
+[data-theme="simple"] .bg-stone-950\/80 { background-color: rgba(255,255,255,0.9) !important; }
+[data-theme="simple"] .bg-stone-950\/95 { background-color: rgba(255,255,255,0.97) !important; }
+[data-theme="simple"] .bg-stone-900  { background-color: #f5f4f1 !important; }
+[data-theme="simple"] .bg-stone-900\/40 { background-color: rgba(245,244,241,0.7) !important; }
+[data-theme="simple"] .bg-stone-900\/60 { background-color: rgba(245,244,241,0.92) !important; }
+[data-theme="simple"] .bg-stone-900\/80 { background-color: rgba(245,244,241,0.95) !important; }
+[data-theme="simple"] .bg-stone-800  { background-color: #ebe8e3 !important; }
+[data-theme="simple"] .bg-stone-800\/20 { background-color: rgba(235,232,227,0.35) !important; }
+[data-theme="simple"] .bg-stone-800\/50 { background-color: rgba(235,232,227,0.6) !important; }
+[data-theme="simple"] .bg-stone-800\/60 { background-color: rgba(235,232,227,0.7) !important; }
+
+/* Text */
+[data-theme="simple"] .text-stone-100 { color: #1c1917 !important; }
+[data-theme="simple"] .text-stone-200 { color: #292524 !important; }
+[data-theme="simple"] .text-stone-300 { color: #44403c !important; }
+[data-theme="simple"] .text-stone-400 { color: #57534e !important; }
+[data-theme="simple"] .text-stone-500 { color: #78716c !important; }
+[data-theme="simple"] .text-stone-600 { color: #a8a29e !important; }
+[data-theme="simple"] .text-stone-700 { color: #d6d3d1 !important; }
+
+/* Borders */
+[data-theme="simple"] .border-stone-800    { border-color: #e7e5e4 !important; }
+[data-theme="simple"] .border-stone-800\/60 { border-color: rgba(231,229,228,0.8) !important; }
+[data-theme="simple"] .border-stone-700    { border-color: #d6d3d1 !important; }
+[data-theme="simple"] .border-t.border-stone-800\/60 { border-top-color: rgba(231,229,228,0.8) !important; }
+[data-theme="simple"] .divide-stone-800\/40 > * + * { border-color: rgba(231,229,228,0.5) !important; }
+
+/* Violet → Pan-African red */
+[data-theme="simple"] .bg-violet-500           { background-color: #c41e2a !important; }
+[data-theme="simple"] .bg-violet-400           { background-color: #dc2626 !important; }
+[data-theme="simple"] .bg-violet-500\/5        { background-color: rgba(196,30,42,0.04) !important; }
+[data-theme="simple"] .bg-violet-500\/10       { background-color: rgba(196,30,42,0.07) !important; }
+[data-theme="simple"] .bg-violet-500\/15       { background-color: rgba(196,30,42,0.09) !important; }
+[data-theme="simple"] .bg-violet-500\/20       { background-color: rgba(196,30,42,0.12) !important; }
+[data-theme="simple"] .bg-violet-500\/40       { background-color: rgba(196,30,42,0.25) !important; }
+[data-theme="simple"] .hover\:bg-violet-400:hover { background-color: #b91c1c !important; }
+[data-theme="simple"] .hover\:bg-violet-500\/40:hover { background-color: rgba(196,30,42,0.2) !important; }
+[data-theme="simple"] .text-violet-400        { color: #c41e2a !important; }
+[data-theme="simple"] .text-violet-200        { color: #b91c1c !important; }
+[data-theme="simple"] .border-violet-500      { border-color: #c41e2a !important; }
+[data-theme="simple"] .border-violet-500\/10  { border-color: rgba(196,30,42,0.12) !important; }
+[data-theme="simple"] .border-violet-500\/20  { border-color: rgba(196,30,42,0.22) !important; }
+[data-theme="simple"] .border-violet-500\/30  { border-color: rgba(196,30,42,0.3) !important; }
+[data-theme="simple"] .border-violet-500\/40  { border-color: rgba(196,30,42,0.4) !important; }
+[data-theme="simple"] .border-l-violet-500\/40 { border-left-color: rgba(196,30,42,0.4) !important; }
+[data-theme="simple"] .shadow-\[0_0_16px_rgba\(134\,59\,255\,0\.2\)\] {
+  box-shadow: 0 0 16px rgba(196,30,42,0.15) !important;
+}
+
+/* Amber accent colours (status/warning badges keep their meaning) */
+[data-theme="simple"] .bg-amber-500\/15 { background-color: rgba(245,158,11,0.12) !important; }
+[data-theme="simple"] .text-amber-400   { color: #b45309 !important; }
+
+/* Hover variants */
+[data-theme="simple"] .hover\:bg-stone-800\/20:hover { background-color: rgba(235,232,227,0.4) !important; }
+[data-theme="simple"] .hover\:bg-stone-800\/60:hover { background-color: rgba(235,232,227,0.7) !important; }
+[data-theme="simple"] .hover\:text-stone-200:hover   { color: #1c1917 !important; }
+[data-theme="simple"] .hover\:text-stone-300:hover   { color: #44403c !important; }
+[data-theme="simple"] .hover\:border-stone-700:hover { border-color: #d6d3d1 !important; }
+[data-theme="simple"] .hover\:border-stone-600:hover { border-color: #a8a29e !important; }
+
+/* Radix Tabs active state */
+[data-theme="simple"] .data-\[state\=active\]\:bg-stone-800[data-state="active"] { background-color: #ebe8e3 !important; }
+[data-theme="simple"] .data-\[state\=active\]\:text-stone-100[data-state="active"] { color: #1c1917 !important; }
+
+/* Divide borders */
+[data-theme="simple"] .divide-stone-800\/50 > * + * { border-color: rgba(231,229,228,0.6) !important; }
+[data-theme="simple"] .divide-y > * + * { border-color: rgba(231,229,228,0.6) !important; }
+
+/* Card: remove backdrop blur in simple theme (not needed on light bg) */
+[data-theme="simple"] .backdrop-blur-sm { backdrop-filter: none !important; }
+
+/* Input fields */
+[data-theme="simple"] input[type="text"],
+[data-theme="simple"] input[type="email"],
+[data-theme="simple"] input[type="password"],
+[data-theme="simple"] input[type="number"],
+[data-theme="simple"] textarea,
+[data-theme="simple"] select {
+  background-color: #ffffff !important;
+  border-color: #d6d3d1 !important;
+  color: #1c1917 !important;
+}
+[data-theme="simple"] input::placeholder { color: #a8a29e !important; }
+
+/* Table rows */
+[data-theme="simple"] tbody tr:hover { background-color: rgba(235,232,227,0.35) !important; }
+[data-theme="simple"] thead tr { background-color: #f5f4f1 !important; }
