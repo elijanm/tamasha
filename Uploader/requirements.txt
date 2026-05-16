@@ -2,3 +2,4 @@ boto3
 watchdog
 python-dotenv
 tqdm
+rich>=10.1.0
