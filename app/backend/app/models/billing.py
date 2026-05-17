@@ -54,6 +54,7 @@ class InvoiceDocument(BaseModel):
     due_date: datetime                    # last day of the billing month (UTC midnight)
     paid_at: datetime | None = None
     notes: str | None = None
+    line_items: list[dict] = Field(default_factory=list)  # snapshot of cost items at creation
     data_export_r2_key: str | None = None
     data_export_expires_at: datetime | None = None
     reminders_sent: list[int] = Field(default_factory=list)  # days-before already sent

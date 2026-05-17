@@ -133,9 +133,10 @@ async def create_invoice(
     actor: UserDocument = Depends(_require_superadmin),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ) -> InvoiceResponse:
+    snapshot = await billing_service._snapshot_line_items(db)
     amount = body.amount_usd
     if amount is None:
-        amount = await billing_service._compute_invoice_amount(db)
+        amount = sum(i["amount_usd"] for i in snapshot)
         if amount == 0:
             raise HTTPException(400, "No platform cost configured and no amount provided")
 
@@ -146,6 +147,7 @@ async def create_invoice(
         amount_usd=amount,
         created_by=str(actor.id),
         notes=body.notes,
+        line_items=snapshot,
     )
     await billing_service._mark_one_time_items_used(db, str(doc["_id"]))
     return billing_service._to_invoice_response(doc)
@@ -178,6 +180,17 @@ async def record_payment(
         notes=body.notes,
     )
     return billing_service._to_invoice_response(doc)
+
+
+@router.delete("/invoices/{invoice_id}", status_code=204)
+async def delete_invoice(
+    invoice_id: str,
+    actor: UserDocument = Depends(_require_superadmin),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+) -> None:
+    deleted = await billing_service.delete_invoice(db, invoice_id)
+    if not deleted:
+        raise NotFoundError("Invoice not found")
 
 
 @router.post("/invoices/{invoice_id}/arrangement", response_model=PaymentArrangementResponse)

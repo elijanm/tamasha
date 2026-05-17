@@ -43,6 +43,13 @@ class SetReminderDaysRequest(BaseModel):
     reminder_days: list[int] = Field(..., min_length=1)
 
 
+class InvoiceLineItemResponse(BaseModel):
+    id: str
+    description: str
+    amount_usd: float
+    type: Literal["monthly", "one_time"]
+
+
 class InvoiceResponse(BaseModel):
     id: str
     period_month: int
@@ -55,6 +62,7 @@ class InvoiceResponse(BaseModel):
     due_date: datetime
     paid_at: datetime | None
     notes: str | None
+    line_items: list[InvoiceLineItemResponse] = Field(default_factory=list)
     data_export_r2_key: str | None
     data_export_expires_at: datetime | None
     days_overdue: int

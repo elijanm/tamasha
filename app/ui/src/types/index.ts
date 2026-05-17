@@ -533,6 +533,13 @@ export interface PlatformCostConfig {
   updated_at: string;
 }
 
+export interface InvoiceLineItem {
+  id: string;
+  description: string;
+  amount_usd: number;
+  type: CostLineType;
+}
+
 export interface Invoice {
   id: string;
   period_month: number;
@@ -545,6 +552,7 @@ export interface Invoice {
   due_date: string;
   paid_at: string | null;
   notes: string | null;
+  line_items: InvoiceLineItem[];
   data_export_r2_key: string | null;
   data_export_expires_at: string | null;
   days_overdue: number;

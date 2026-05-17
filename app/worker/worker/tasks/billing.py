@@ -58,16 +58,17 @@ async def _async_generate_invoice(log) -> dict:
         log.warning("no_platform_cost_configured")
         return {"skipped": True, "reason": "no_config"}
 
-    # Compute amount from line items
-    items = cfg.get("line_items", [])
-    amount = sum(
-        i["amount_usd"] for i in items
+    # Compute amount from line items and build snapshot
+    raw_items = cfg.get("line_items", [])
+    snapshot = [
+        {"id": i["id"], "description": i["description"], "amount_usd": i["amount_usd"], "type": i["type"]}
+        for i in raw_items
         if i.get("is_active") and (
             i.get("type") == "monthly"
             or (i.get("type") == "one_time" and not i.get("used_in_invoice_id"))
         )
-    )
-    amount = round(amount, 2)
+    ]
+    amount = round(sum(i["amount_usd"] for i in snapshot), 2)
     if amount == 0:
         log.warning("platform_cost_zero_amount")
         return {"skipped": True, "reason": "zero_amount"}
@@ -82,6 +83,7 @@ async def _async_generate_invoice(log) -> dict:
         "due_date": due_date,
         "paid_at": None,
         "notes": None,
+        "line_items": snapshot,
         "data_export_r2_key": None,
         "data_export_expires_at": None,
         "reminders_sent": [],

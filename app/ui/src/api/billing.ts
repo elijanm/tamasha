@@ -68,6 +68,10 @@ export const billingApi = {
     return res.data;
   },
 
+  deleteInvoice: async (id: string): Promise<void> => {
+    await api.delete(`/billing/invoices/${id}`);
+  },
+
   listInvoices: async (params: { skip?: number; limit?: number } = {}): Promise<PagedResponse<Invoice>> => {
     const res = await api.get<PagedResponse<Invoice>>("/billing/invoices", { params });
     return res.data;

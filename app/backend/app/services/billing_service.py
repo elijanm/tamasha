@@ -17,6 +17,7 @@ from app.models.billing import (
 from app.schemas.billing import (
     BillingGateStatus,
     CostLineItemResponse,
+    InvoiceLineItemResponse,
     InvoiceResponse,
     PaymentArrangementResponse,
     PaymentRecordResponse,
@@ -57,6 +58,15 @@ def _to_invoice_response(doc: dict) -> InvoiceResponse:
     if due.tzinfo is None:
         due = due.replace(tzinfo=timezone.utc)
     days_overdue = max(0, (now - due).days) if inv.status not in ("paid",) else 0
+    line_items = [
+        InvoiceLineItemResponse(
+            id=li.get("id", ""),
+            description=li.get("description", ""),
+            amount_usd=li.get("amount_usd", 0.0),
+            type=li.get("type", "monthly"),
+        )
+        for li in (doc.get("line_items") or [])
+    ]
     return InvoiceResponse(
         id=str(doc["_id"]),
         period_month=inv.period_month,
@@ -69,12 +79,33 @@ def _to_invoice_response(doc: dict) -> InvoiceResponse:
         due_date=due,
         paid_at=inv.paid_at,
         notes=inv.notes,
+        line_items=line_items,
         data_export_r2_key=inv.data_export_r2_key,
         data_export_expires_at=inv.data_export_expires_at,
         days_overdue=days_overdue,
         created_at=inv.created_at,
         updated_at=inv.updated_at,
     )
+
+
+async def _snapshot_line_items(db: AsyncIOMotorDatabase) -> list[dict]:
+    """Return active cost line items as plain dicts for invoice snapshot."""
+    doc = await _get_cost_doc(db)
+    if not doc:
+        return []
+    return [
+        {
+            "id": i["id"],
+            "description": i["description"],
+            "amount_usd": i["amount_usd"],
+            "type": i["type"],
+        }
+        for i in doc.get("line_items", [])
+        if i.get("is_active") and (
+            i.get("type") == "monthly"
+            or (i.get("type") == "one_time" and not i.get("used_in_invoice_id"))
+        )
+    ]
 
 
 # ── Platform cost config ───────────────────────────────────────────────────────
@@ -256,6 +287,7 @@ async def create_invoice(
     amount_usd: float,
     created_by: str,
     notes: str | None = None,
+    line_items: list[dict] | None = None,
 ) -> dict:
     now = _utc_now()
     due_date = _month_end(year, month)
@@ -268,6 +300,7 @@ async def create_invoice(
         "due_date": due_date,
         "paid_at": None,
         "notes": notes,
+        "line_items": line_items or [],
         "data_export_r2_key": None,
         "data_export_expires_at": None,
         "reminders_sent": [],
@@ -278,6 +311,14 @@ async def create_invoice(
     result = await db["invoices"].insert_one(doc)
     doc["_id"] = result.inserted_id
     return doc
+
+
+async def delete_invoice(db: AsyncIOMotorDatabase, invoice_id: str) -> bool:
+    result = await db["invoices"].delete_one({"_id": ObjectId(invoice_id)})
+    if result.deleted_count:
+        await db["payment_records"].delete_many({"invoice_id": invoice_id})
+        await db["payment_arrangements"].delete_many({"invoice_id": invoice_id})
+    return result.deleted_count > 0
 
 
 async def record_payment(

@@ -14,7 +14,7 @@ import {
 import type { AddLineItemRequest, UpdateLineItemRequest } from "@/api/billing";
 import { billingApi } from "@/api/billing";
 import { toast } from "@/hooks/useToast";
-import type { CostLineItem, CostLineType, Invoice, PlatformCostConfig } from "@/types";
+import type { CostLineItem, CostLineType, Invoice, InvoiceLineItem, PlatformCostConfig } from "@/types";
 
 function formatUSD(n: number) {
   return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -488,28 +488,43 @@ function InvoiceActions({ invoice, onDone }: { invoice: Invoice; onDone: () => v
 // ── Invoice row ───────────────────────────────────────────────────────────────
 
 function InvoiceRow({ invoice }: { invoice: Invoice }) {
+  const qc = useQueryClient();
   const [expanded, setExpanded] = useState(false);
   const cfg = STATUS_CONFIG[invoice.status] ?? STATUS_CONFIG.pending;
   const Icon = cfg.icon;
+  const canExpand = invoice.status !== "deleted";
+  const hasLineItems = invoice.line_items.length > 0;
+
+  const { mutate: remove, isPending: deleting } = useMutation({
+    mutationFn: () => billingApi.deleteInvoice(invoice.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["billing"] });
+      toast({ title: "Invoice deleted", variant: "success" });
+    },
+    onError: () => toast({ title: "Failed to delete invoice", variant: "destructive" }),
+  });
 
   return (
     <div className="border border-stone-800/60 rounded-xl bg-stone-900/40 overflow-hidden">
-      <button
-        className="w-full flex items-center gap-4 px-5 py-4 hover:bg-stone-800/20 transition-colors text-left"
-        onClick={() => setExpanded(!expanded)}
-      >
+      <div className="flex items-center gap-4 px-5 py-4">
         <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
           invoice.status === "paid" ? "bg-emerald-500/10" : "bg-stone-800"
         }`}>
           <Icon className={`w-4 h-4 ${cfg.color}`} />
         </div>
 
-        <div className="flex-1 min-w-0">
+        <button
+          className="flex-1 min-w-0 text-left"
+          onClick={() => canExpand && setExpanded(!expanded)}
+        >
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-display font-semibold text-stone-200">{invoice.period_label}</span>
             <span className={`text-xs font-mono px-1.5 py-0.5 rounded ${cfg.color} bg-stone-800`}>
               {cfg.label}
             </span>
+            {hasLineItems && (
+              <span className="text-[10px] font-mono text-stone-600">{invoice.line_items.length} items</span>
+            )}
           </div>
           <div className="flex items-center gap-4 mt-0.5 text-xs font-mono text-stone-500">
             <span>Due {formatDate(invoice.due_date)}</span>
@@ -517,7 +532,7 @@ function InvoiceRow({ invoice }: { invoice: Invoice }) {
               <span className="text-amber-500">{invoice.days_overdue}d overdue</span>
             )}
           </div>
-        </div>
+        </button>
 
         <div className="text-right flex-shrink-0">
           <p className="text-sm font-mono font-semibold text-stone-200">{formatUSD(invoice.amount_usd)}</p>
@@ -529,14 +544,61 @@ function InvoiceRow({ invoice }: { invoice: Invoice }) {
           )}
         </div>
 
-        {invoice.status !== "paid" && invoice.status !== "deleted" && (
-          <ChevronDown className={`w-4 h-4 text-stone-600 flex-shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} />
-        )}
-      </button>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <Button
+            size="sm" variant="ghost"
+            onClick={() => {
+              if (window.confirm(`Delete invoice for ${invoice.period_label}? This cannot be undone.`)) {
+                remove();
+              }
+            }}
+            disabled={deleting}
+            className="h-7 w-7 p-0 text-stone-700 hover:text-red-400"
+            title="Delete invoice"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </Button>
+          {canExpand && (
+            <Button
+              size="sm" variant="ghost"
+              onClick={() => setExpanded(!expanded)}
+              className="h-7 w-7 p-0 text-stone-600"
+            >
+              <ChevronDown className={`w-4 h-4 transition-transform ${expanded ? "rotate-180" : ""}`} />
+            </Button>
+          )}
+        </div>
+      </div>
 
-      {expanded && invoice.status !== "paid" && invoice.status !== "deleted" && (
-        <div className="px-5 pb-5">
-          <InvoiceActions invoice={invoice} onDone={() => setExpanded(false)} />
+      {expanded && (
+        <div className="px-5 pb-5 space-y-4 border-t border-stone-800/40 pt-4">
+          {/* Line items breakdown */}
+          {hasLineItems && (
+            <div className="space-y-0 bg-stone-900/60 rounded-lg overflow-hidden">
+              <p className="text-[10px] font-mono uppercase tracking-wider text-stone-600 px-3 pt-2.5 pb-1">
+                Invoice breakdown
+              </p>
+              {invoice.line_items.map((li: InvoiceLineItem) => (
+                <div key={li.id} className="flex items-center gap-3 px-3 py-2 border-t border-stone-800/40">
+                  <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded flex-shrink-0 ${
+                    li.type === "monthly" ? "bg-violet-500/10 text-violet-400" : "bg-amber-500/10 text-amber-400"
+                  }`}>
+                    {li.type === "monthly" ? "Monthly" : "One-time"}
+                  </span>
+                  <span className="flex-1 text-xs text-stone-300">{li.description}</span>
+                  <span className="text-xs font-mono text-stone-200 flex-shrink-0">{formatUSD(li.amount_usd)}</span>
+                </div>
+              ))}
+              <div className="flex justify-between items-center px-3 py-2 border-t border-stone-700/60 bg-stone-800/30">
+                <span className="text-xs font-mono text-stone-400">Total</span>
+                <span className="text-sm font-mono font-semibold text-stone-100">{formatUSD(invoice.amount_usd)}</span>
+              </div>
+            </div>
+          )}
+          {/* Payment actions */}
+          {invoice.status !== "paid" && invoice.status !== "deleted" && (
+            <InvoiceActions invoice={invoice} onDone={() => setExpanded(false)} />
+          )}
         </div>
       )}
     </div>
