@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/useAuth";
 import {
   Copy, HardDrive, CheckCircle2, Clock, ScanLine, ChevronDown,
   ChevronUp, Play, Pause, Star, Trash2, RefreshCw, Layers,
@@ -433,6 +434,8 @@ const TABS: { label: string; value: TabFilter }[] = [
 ];
 
 export function DuplicatesPage() {
+  const { role } = useAuth();
+  const isStaff = role === "staff";
   const [tab, setTab] = useState<TabFilter>("pending_review");
   const [page, setPage] = useState(0);
   const LIMIT = 20;
@@ -477,7 +480,7 @@ export function DuplicatesPage() {
       <MetricsBanner />
 
       {/* Scan controls + recent job history */}
-      <Card className="p-4 space-y-3">
+      {!isStaff && <Card className="p-4 space-y-3">
         <div className="flex items-center justify-between gap-4">
           <div>
             <p className="text-sm font-mono text-stone-300 font-medium">Duplicate Scan</p>
@@ -504,7 +507,7 @@ export function DuplicatesPage() {
             ))}
           </div>
         )}
-      </Card>
+      </Card>}
 
       {/* Tab bar + refresh */}
       <div className="flex items-center justify-between gap-4">

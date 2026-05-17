@@ -12,6 +12,7 @@ import { adminApi } from "@/api/admin";
 import { analyticsApi } from "@/api/analytics";
 import { syncJobsApi } from "@/api/syncJobs";
 import { formatFileSize, formatCount } from "@/utils/format";
+import { useAuth } from "@/hooks/useAuth";
 import type { SyncJob } from "@/types";
 
 // ─── Status indicator ─────────────────────────────────────────────────────────
@@ -157,6 +158,8 @@ function PoolJobRow({ job }: { job: SyncJob }) {
 }
 
 export function SettingsPage() {
+  const { role } = useAuth();
+  const isStaff = role === "staff";
   const [enabledMetrics, setEnabledMetrics] = useState<MetricKey[]>(loadEnabledMetrics);
   const [configuringMetrics, setConfiguringMetrics] = useState(false);
   const [playerVisible, setPlayerVisible] = useState<boolean>(loadPlayerVisible);
@@ -454,7 +457,7 @@ export function SettingsPage() {
       </section>
 
       {/* ── Index ───────────────────────────────────────────────────────── */}
-      <section className="space-y-3">
+      {!isStaff && <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-xs font-mono font-semibold text-stone-600 uppercase tracking-widest">
             Index (Pool All)
@@ -503,10 +506,10 @@ export function SettingsPage() {
             ))}
           </div>
         )}
-      </section>
+      </section>}
 
       {/* ── Extract Music ───────────────────────────────────────────────── */}
-      <section className="space-y-3">
+      {!isStaff && <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-xs font-mono font-semibold text-stone-600 uppercase tracking-widest">
             Extract Music (ID3 + Path)
@@ -565,7 +568,7 @@ export function SettingsPage() {
             ))}
           </div>
         )}
-      </section>
+      </section>}
 
       {/* ── Configurable Metrics ────────────────────────────────────────── */}
       <section className="space-y-3">

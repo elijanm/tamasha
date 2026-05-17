@@ -3,11 +3,14 @@ import { Settings2, Users, ScrollText, Palette, Copy, Receipt } from "lucide-rea
 import { useAuth } from "@/hooks/useAuth";
 
 export function SettingsLayout() {
-  const { hasAccounting } = useAuth();
+  const { hasAccounting, role } = useAuth();
+  const isStaff = role === "staff";
 
   const tabs = [
     { label: "General",    to: "/admin/settings",               icon: Settings2,  end: true  },
-    { label: "Users",      to: "/admin/settings/users",         icon: Users,      end: false },
+    ...(!isStaff
+      ? [{ label: "Users", to: "/admin/settings/users", icon: Users, end: false }]
+      : []),
     { label: "Audit Log",  to: "/admin/settings/audit-log",     icon: ScrollText, end: false },
     { label: "Themes",     to: "/admin/settings/themes",        icon: Palette,    end: false },
     { label: "Duplicates", to: "/admin/settings/duplicates",    icon: Copy,       end: false },

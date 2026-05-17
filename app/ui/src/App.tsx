@@ -29,12 +29,12 @@ import { useAuth } from "@/hooks/useAuth";
 import type { Role } from "@/types";
 
 
-const ENTERPRISE_ROLES: Role[] = ["staff", "artist", "listener"];
+const ENTERPRISE_ROLES: Role[] = ["artist", "listener"];
 
 const ROLE_REDIRECTS: Record<Role, string> = {
   superadmin: "/superadmin/billing",
   admin: "/admin",
-  staff: "/not-enabled",
+  staff: "/admin",
   artist: "/not-enabled",
   listener: "/not-enabled",
 };
@@ -64,7 +64,7 @@ function AppRoutes() {
         <Route path="/register" element={<RegisterPage />} />
       </Route>
 
-      <Route element={<DashboardLayout requiredRole="admin" />}>
+      <Route element={<DashboardLayout requiredRole={["admin", "staff"]} />}>
         <Route path="/admin" element={<AdminDashboard />} />
         <Route path="/admin/users" element={<UsersPage />} />
         <Route path="/admin/audit-logs" element={<AuditLogsPage />} />

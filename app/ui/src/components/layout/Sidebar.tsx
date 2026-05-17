@@ -29,7 +29,14 @@ const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { label: "Skiza",         to: "/admin/skiza",            icon: Scissors        },
     { label: "Media Monitor", to: "/admin/media-monitoring", icon: Radio           },
   ],
-  staff:    [],
+  staff: [
+    { label: "Dashboard",     to: "/admin",                  icon: LayoutDashboard },
+    { label: "Catalogue",     to: "/admin/catalogue",        icon: Library         },
+    { label: "Artists",       to: "/admin/artists",          icon: Users           },
+    { label: "Browse Music",  to: "/admin/browse",           icon: Headphones      },
+    { label: "Skiza",         to: "/admin/skiza",            icon: Scissors        },
+    { label: "Media Monitor", to: "/admin/media-monitoring", icon: Radio           },
+  ],
   artist:   [],
   listener: [],
 };
@@ -149,8 +156,8 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
         })}
       </nav>
 
-      {/* Settings link (admin only) */}
-      {role === "admin" && (
+      {/* Settings link (admin + staff) */}
+      {(role === "admin" || role === "staff") && (
         <div className="px-3 pb-2 border-t border-stone-800/60 pt-2">
           <NavLink
             to="/admin/settings"
