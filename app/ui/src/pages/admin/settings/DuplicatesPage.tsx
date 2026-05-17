@@ -451,9 +451,10 @@ export function DuplicatesPage() {
     placeholderData: (prev) => prev,
   });
 
-  const { data: scanJobs, refetch: refetchScanJobs } = useQuery({
+  const { data: scanJobs } = useQuery({
     queryKey: ["scan-jobs-dedup"],
     queryFn: () => syncJobsApi.list({ mode: "dedup_scan", limit: 2 }),
+    enabled: !isStaff,
     refetchInterval: (query) => {
       const items = query.state.data?.items ?? [];
       return items.some((j) => j.status === "running" || j.status === "queued") ? 2_000 : 30_000;

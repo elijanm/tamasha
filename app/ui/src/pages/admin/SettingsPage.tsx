@@ -195,6 +195,7 @@ export function SettingsPage() {
   const { data: poolJobs, refetch: refetchPoolJobs } = useQuery({
     queryKey: ["sync-jobs-pool"],
     queryFn: () => syncJobsApi.list({ mode: "pool_all", limit: 5 }),
+    enabled: !isStaff,
     refetchInterval: (query) => {
       const items = query.state.data?.items ?? [];
       return items.some((j) => j.status === "running" || j.status === "queued") ? 3_000 : 30_000;
@@ -214,6 +215,7 @@ export function SettingsPage() {
   const { data: enrichJobs, refetch: refetchEnrichJobs } = useQuery({
     queryKey: ["sync-jobs-enrich"],
     queryFn: () => syncJobsApi.list({ mode: "batch_enrich_metadata", limit: 5 }),
+    enabled: !isStaff,
     refetchInterval: (query) => {
       const items = query.state.data?.items ?? [];
       return items.some((j) => j.status === "running" || j.status === "queued") ? 3_000 : 30_000;
