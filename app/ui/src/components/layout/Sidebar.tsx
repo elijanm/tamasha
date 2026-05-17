@@ -29,19 +29,9 @@ const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { label: "Skiza",         to: "/admin/skiza",            icon: Scissors        },
     { label: "Media Monitor", to: "/admin/media-monitoring", icon: Radio           },
   ],
-  staff: [
-    { label: "Dashboard",    to: "/staff",             icon: LayoutDashboard },
-    { label: "Review Queue", to: "/staff/queue",        icon: ClipboardList   },
-    { label: "Catalogue",    to: "/staff/catalogue",   icon: Library         },
-    { label: "Browse Music", to: "/staff/browse",      icon: Headphones      },
-    { label: "Skiza",        to: "/staff/skiza",        icon: Scissors        },
-  ],
-  artist: [
-    { label: "Dashboard", to: "/artist", icon: Activity },
-  ],
-  listener: [
-    { label: "Browse", to: "/listener", icon: Headphones },
-  ],
+  staff:    [],
+  artist:   [],
+  listener: [],
 };
 
 const ROLE_META: Record<Role, { label: string; icon: React.ComponentType<{ className?: string }>; color: string }> = {

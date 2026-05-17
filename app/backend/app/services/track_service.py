@@ -99,8 +99,12 @@ async def list_tracks(
     workflow_tag: str | None = None,
     needs_review: bool = False,
     search: str | None = None,
+    exclude_deleted: bool = True,
+    sort_by: str = "created_at",
 ) -> tuple[list[TrackDocument], int]:
     query: dict = {}
+    if exclude_deleted:
+        query["deleted"] = {"$ne": True}
     if artist_id:
         try:
             query["artist_id"] = ObjectId(artist_id)
@@ -123,7 +127,9 @@ async def list_tracks(
             {"genre": {"$regex": search, "$options": "i"}},
         ]
     total = await db["tracks"].count_documents(query)
-    cursor = db["tracks"].find(query).sort("created_at", -1).skip(page.skip).limit(page.limit)
+    _SORT_FIELDS = {"created_at", "stream_count", "title", "updated_at"}
+    sort_field = sort_by if sort_by in _SORT_FIELDS else "created_at"
+    cursor = db["tracks"].find(query).sort(sort_field, -1).skip(page.skip).limit(page.limit)
     docs = await cursor.to_list(length=page.limit)
 
     # Batch-resolve artist display names

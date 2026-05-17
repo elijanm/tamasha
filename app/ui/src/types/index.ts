@@ -187,6 +187,7 @@ export interface TracksListParams {
   workflow_tag?: string;
   needs_review?: boolean;
   search?: string;
+  sort_by?: "created_at" | "stream_count" | "title" | "updated_at";
 }
 
 export type SkizaStatus =

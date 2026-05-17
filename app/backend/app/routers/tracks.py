@@ -99,12 +99,16 @@ async def list_tracks(
     search: str | None = Query(default=None),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
+    sort_by: str = Query(default="created_at"),
     _actor: UserDocument = require_permission("track.read"),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ) -> TrackListResponse:
     page = PageParams(skip=skip, limit=limit)
+    # Admin/staff can see deleted tracks; listeners and artists never see them
+    exclude_deleted = _actor.role not in ("admin", "superadmin", "staff")
     tracks, total = await track_service.list_tracks(
         db, page, artist_id, status, genre, no_artist, workflow_tag, needs_review, search,
+        exclude_deleted=exclude_deleted, sort_by=sort_by,
     )
     return TrackListResponse(items=[_to_response(t) for t in tracks], total=total, skip=skip, limit=limit)
 

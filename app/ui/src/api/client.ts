@@ -86,6 +86,15 @@ api.interceptors.response.use(
   async (error: AxiosError) => {
     const originalRequest = error.config as RetryConfig;
 
+    // Surface the backend's specific rate-limit message instead of a raw network error
+    if (error.response?.status === 429) {
+      const data = error.response.data as { detail?: string; retry_after?: number } | undefined;
+      const detail = data?.detail ?? "Too many requests. Please wait before trying again.";
+      const enriched = new Error(detail) as Error & { response: typeof error.response };
+      enriched.response = error.response;
+      return Promise.reject(enriched);
+    }
+
     if (error.response?.status === 401 && !originalRequest._retry) {
       // Login/refresh requests must fail naturally so callers can show errors
       if (originalRequest.url?.includes("/auth/login") || originalRequest.url?.includes("/auth/refresh")) {

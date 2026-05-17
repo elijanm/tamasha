@@ -40,13 +40,25 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 await redis.expire(cache_key, 60)
 
             if current > limit:
+                seconds_left = 60 - int(time.time() % 60)
+                if is_auth_path:
+                    detail = (
+                        f"Too many login attempts from your IP address. "
+                        f"Please wait {seconds_left} second{'s' if seconds_left != 1 else ''} before trying again."
+                    )
+                else:
+                    detail = (
+                        f"You have exceeded the request limit ({limit} requests per minute). "
+                        f"Please wait {seconds_left} second{'s' if seconds_left != 1 else ''} before retrying."
+                    )
                 return JSONResponse(
                     status_code=429,
                     content={
                         "error": "rate_limit_exceeded",
-                        "detail": "Too many requests",
+                        "detail": detail,
+                        "retry_after": seconds_left,
                     },
-                    headers={"Retry-After": "60"},
+                    headers={"Retry-After": str(seconds_left)},
                 )
         except Exception:  # noqa: BLE001 — never block request on Redis failure
             pass

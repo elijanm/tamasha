@@ -19,10 +19,6 @@ import { MediaMonitoringPage } from "@/pages/admin/MediaMonitoringPage";
 import { ThemesPage } from "@/pages/admin/settings/ThemesPage";
 import { DuplicatesPage } from "@/pages/admin/settings/DuplicatesPage";
 import { BillingPage } from "@/pages/admin/settings/BillingPage";
-import { StaffDashboard } from "@/pages/staff/StaffDashboard";
-import { TrackQueuePage } from "@/pages/staff/TrackQueuePage";
-import { TrackEditPage } from "@/pages/staff/TrackEditPage";
-import { ArtistDashboard } from "@/pages/artist/ArtistDashboard";
 import { ListenerHome } from "@/pages/listener/ListenerHome";
 import { BillingDashboard } from "@/pages/superadmin/BillingDashboard";
 import { SuperadminSettingsPage } from "@/pages/superadmin/SuperadminSettingsPage";
@@ -88,26 +84,9 @@ function AppRoutes() {
         <Route path="/admin/media-monitoring" element={<MediaMonitoringPage />} />
       </Route>
 
-      <Route element={<DashboardLayout requiredRole={["staff", "admin"] as Role[]} />}>
-        <Route path="/staff" element={<StaffDashboard />} />
-        <Route path="/staff/queue" element={<TrackQueuePage />} />
-        <Route path="/staff/tracks/:id" element={<TrackEditPage />} />
-        <Route path="/staff/catalogue" element={<CataloguePage />} />
-        <Route path="/staff/skiza" element={<SkizaPage />} />
-        <Route path="/staff/browse" element={<ListenerHome statusFilter={null} />} />
-      </Route>
-
       <Route element={<DashboardLayout requiredRole="superadmin" />}>
         <Route path="/superadmin/billing" element={<BillingDashboard />} />
         <Route path="/superadmin/settings" element={<SuperadminSettingsPage />} />
-      </Route>
-
-      <Route element={<DashboardLayout requiredRole="artist" />}>
-        <Route path="/artist" element={<ArtistDashboard />} />
-      </Route>
-
-      <Route element={<DashboardLayout requiredRole="listener" />}>
-        <Route path="/listener" element={<ListenerHome />} />
       </Route>
 
       {/* Profile — all authenticated roles */}
@@ -115,9 +94,12 @@ function AppRoutes() {
         <Route path="/profile" element={<ProfilePage />} />
       </Route>
 
-      {/* Enterprise-gated roles land here */}
+      {/* Staff / artist / listener land on the not-enabled page; all their sub-routes redirect here too */}
       <Route element={<DashboardLayout requiredRole={ENTERPRISE_ROLES} />}>
         <Route path="/not-enabled" element={<NotEnabledPage />} />
+        <Route path="/staff/*" element={<Navigate to="/not-enabled" replace />} />
+        <Route path="/artist/*" element={<Navigate to="/not-enabled" replace />} />
+        <Route path="/listener/*" element={<Navigate to="/not-enabled" replace />} />
       </Route>
 
       <Route path="/unauthorized" element={<UnauthorizedPage />} />

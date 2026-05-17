@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Music2, Play, Pause, Search, Volume2, VolumeX, Loader2,
-  Heart, Clock, Disc2,
+  Heart, Clock, Disc2, Hourglass,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -33,11 +33,11 @@ function displayArtist(track: Track): string {
 }
 
 interface Props {
-  /** Pass null/undefined to show all statuses (admin/staff). Default: "ready" for listeners. */
+  /** Pass a specific status string to filter. Default: null = show all non-deleted tracks. */
   statusFilter?: string | null;
 }
 
-export function ListenerHome({ statusFilter = "ready" }: Props) {
+export function ListenerHome({ statusFilter = null }: Props) {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [skip, setSkip] = useState(0);
@@ -101,6 +101,15 @@ export function ListenerHome({ statusFilter = "ready" }: Props) {
   const tracks = data?.items ?? [];
   const total = data?.total ?? 0;
 
+  // When the main query returns nothing and there's no search active, check if
+  // tracks exist in pending/processing state so we can show a helpful message.
+  const { data: pendingData } = useQuery({
+    queryKey: ["tracks", "pending-count"],
+    queryFn: () => tracksApi.list({ status: "pending", limit: 1 }),
+    enabled: total === 0 && !search && !tracksLoading,
+    staleTime: 60_000,
+  });
+
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   return (
@@ -109,7 +118,7 @@ export function ListenerHome({ statusFilter = "ready" }: Props) {
         <div>
           <h1 className="font-display text-2xl font-bold text-stone-100">Browse Music</h1>
           <p className="mt-1 text-sm font-body text-stone-500">
-            {statusFilter === "ready" ? "Discover the Tamasha archive" : `${formatCount(data?.total)} tracks in archive`}
+            {total > 0 ? `${formatCount(total)} track${total !== 1 ? "s" : ""} in the archive` : "Discover the Tamasha archive"}
           </p>
         </div>
         <div className="relative max-w-xs w-full">
@@ -288,9 +297,28 @@ export function ListenerHome({ statusFilter = "ready" }: Props) {
             );
           })}
           {tracks.length === 0 && !tracksLoading && (
-            <div className="col-span-full flex flex-col items-center justify-center py-16 text-stone-700">
-              <Music2 className="w-10 h-10 mb-3 opacity-30" />
-              <p className="font-body text-sm">No tracks found</p>
+            <div className="col-span-full flex flex-col items-center justify-center py-16">
+              {search ? (
+                <>
+                  <Music2 className="w-10 h-10 mb-3 text-stone-700 opacity-40" />
+                  <p className="font-body text-sm text-stone-500">No tracks match your search</p>
+                  <p className="font-body text-xs text-stone-700 mt-1">Try a different title, artist, or album</p>
+                </>
+              ) : (pendingData?.total ?? 0) > 0 ? (
+                <>
+                  <Hourglass className="w-10 h-10 mb-3 text-amber-600/50" />
+                  <p className="font-body text-sm text-stone-400">Music is being prepared</p>
+                  <p className="font-body text-xs text-stone-600 mt-1 text-center max-w-xs">
+                    {pendingData!.total.toLocaleString()} track{pendingData!.total !== 1 ? "s" : ""} are being processed — check back shortly
+                  </p>
+                </>
+              ) : (
+                <>
+                  <Music2 className="w-10 h-10 mb-3 text-stone-700 opacity-40" />
+                  <p className="font-body text-sm text-stone-500">No music in the archive yet</p>
+                  <p className="font-body text-xs text-stone-700 mt-1">Upload tracks via the Tamasha Uploader to get started</p>
+                </>
+              )}
             </div>
           )}
         </div>
