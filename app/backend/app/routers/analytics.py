@@ -55,7 +55,7 @@ async def get_artist_dashboard(
 
 @router.get("/dashboard", response_model=AdminDashboard)
 async def get_admin_dashboard(
-    _actor: UserDocument = require_permission("*"),
+    _actor: UserDocument = require_permission("analytics.read"),
     db: AsyncIOMotorDatabase = Depends(get_db),
     redis: Redis = Depends(get_redis),
 ) -> AdminDashboard:
@@ -64,7 +64,7 @@ async def get_admin_dashboard(
 
 @router.post("/dashboard/invalidate", status_code=204)
 async def invalidate_dashboard_cache(
-    _actor: UserDocument = require_permission("*"),
+    _actor: UserDocument = require_permission("analytics.read"),
     redis: Redis = Depends(get_redis),
 ) -> None:
     await redis.delete("analytics:admin:dashboard")
@@ -85,7 +85,7 @@ async def get_top_tracks(
 @router.get("/geography")
 async def get_geography(
     window_days: int = Query(default=30, ge=1, le=365),
-    _actor: UserDocument = require_permission("*"),
+    _actor: UserDocument = require_permission("analytics.read"),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ) -> list:
     from datetime import timedelta
