@@ -26,6 +26,7 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "analytics.read",
         "audit_log.read",
         "sync_job.read",
+        "admin.read",
     },
     "artist": {
         "track.read",

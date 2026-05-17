@@ -14,6 +14,7 @@ from app.services import admin_service
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 _admin = require_permission("*")
+_admin_read = require_permission("admin.read")
 
 # Collections cleared by reset — billing and user data are preserved
 _RESET_COLLECTIONS = [
@@ -30,7 +31,7 @@ _RESET_COLLECTIONS = [
 
 @router.get("/health", response_model=SystemHealth)
 async def system_health(
-    _actor: UserDocument = _admin,
+    _actor: UserDocument = _admin_read,
     db: AsyncIOMotorDatabase = Depends(get_db),
     redis: Redis = Depends(get_redis),
 ) -> SystemHealth:
@@ -39,7 +40,7 @@ async def system_health(
 
 @router.get("/queue-health", response_model=QueueHealth)
 async def queue_health(
-    _actor: UserDocument = _admin,
+    _actor: UserDocument = _admin_read,
     redis: Redis = Depends(get_redis),
 ) -> QueueHealth:
     return await admin_service.get_queue_health(redis)
@@ -47,7 +48,7 @@ async def queue_health(
 
 @router.get("/storage-metrics", response_model=StorageMetrics)
 async def storage_metrics(
-    _actor: UserDocument = _admin,
+    _actor: UserDocument = _admin_read,
     db: AsyncIOMotorDatabase = Depends(get_db),
 ) -> StorageMetrics:
     return await admin_service.get_storage_metrics(db)
@@ -55,7 +56,7 @@ async def storage_metrics(
 
 @router.get("/backup-status", response_model=BackupStatus)
 async def backup_status(
-    _actor: UserDocument = _admin,
+    _actor: UserDocument = _admin_read,
     db: AsyncIOMotorDatabase = Depends(get_db),
 ) -> BackupStatus:
     return await admin_service.get_backup_status(db)

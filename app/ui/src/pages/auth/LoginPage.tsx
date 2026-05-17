@@ -10,9 +10,9 @@ import type { Role } from "@/types";
 const ROLE_REDIRECTS: Record<Role, string> = {
   superadmin: "/superadmin/billing",
   admin: "/admin",
-  staff: "/staff",
-  artist: "/artist",
-  listener: "/listener",
+  staff: "/admin",
+  artist: "/not-enabled",
+  listener: "/not-enabled",
 };
 
 function useLoginForm() {
