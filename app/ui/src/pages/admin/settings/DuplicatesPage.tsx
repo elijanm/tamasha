@@ -12,7 +12,7 @@ import { duplicatesApi } from "@/api/duplicates";
 import { syncJobsApi } from "@/api/syncJobs";
 import { formatFileSize } from "@/utils/format";
 import { usePlayerStore, _audio } from "@/store/player";
-import type { DuplicateGroup, DuplicateGroupDetail, DuplicateTrackEntry, QualityBreakdown, SyncJob } from "@/types";
+import type { DuplicateGroup, DuplicateGroupDetail, DuplicateMetrics, DuplicateTrackEntry, QualityBreakdown, SyncJob } from "@/types";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -188,10 +188,19 @@ function GroupCard({ group }: { group: DuplicateGroup }) {
 
   const resolveMut = useMutation({
     mutationFn: (canonicalId: string) => duplicatesApi.resolve(group.id, canonicalId),
-    onSuccess: () => {
+    onSuccess: (resolvedGroup) => {
       setMerged(true);
+      // Instantly update metrics without waiting for a refetch
+      qc.setQueryData<DuplicateMetrics>(["duplicate-metrics"], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          bytes_already_freed: old.bytes_already_freed + (resolvedGroup.bytes_freed ?? 0),
+          resolved_groups: old.resolved_groups + 1,
+          pending_groups: Math.max(0, old.pending_groups - 1),
+        };
+      });
       qc.invalidateQueries({ queryKey: ["duplicates"] });
-      qc.invalidateQueries({ queryKey: ["duplicate-metrics"] });
       qc.invalidateQueries({ queryKey: ["duplicate-group", group.id] });
     },
   });

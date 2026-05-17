@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from datetime import datetime, timezone
 
@@ -296,27 +297,35 @@ async def resolve_group(
     s = get_settings()
     r2 = get_r2_client()
     loser_ids = [tid for tid in track_ids if tid != canonical_id]
+    loop = asyncio.get_running_loop()
 
     bytes_freed = 0
     for loser_id in loser_ids:
         td = await db["tracks"].find_one({"_id": loser_id}, {"r2_key_raw": 1, "file_size_bytes": 1})
         if not td:
             continue
+        file_size = td.get("file_size_bytes", 0) or 0
         raw_key = td.get("r2_key_raw", "")
         if raw_key:
             dest_key = raw_key.replace("music/raw/", "music/removed-duplicates/", 1)
             if not dest_key.startswith("music/removed-duplicates/"):
                 dest_key = f"music/removed-duplicates/{raw_key.lstrip('/')}"
-            try:
+
+            def _r2_move(src=raw_key, dst=dest_key):
                 r2.copy_object(
                     Bucket=s.r2_bucket,
-                    CopySource={"Bucket": s.r2_bucket, "Key": raw_key},
-                    Key=dest_key,
+                    CopySource={"Bucket": s.r2_bucket, "Key": src},
+                    Key=dst,
                 )
-                r2.delete_object(Bucket=s.r2_bucket, Key=raw_key)
-                bytes_freed += td.get("file_size_bytes", 0) or 0
+                r2.delete_object(Bucket=s.r2_bucket, Key=src)
+
+            try:
+                await loop.run_in_executor(None, _r2_move)
             except Exception:
-                pass
+                pass  # R2 archival is best-effort; dedup is logical, not physical
+
+        # Count bytes freed regardless of R2 outcome — the canonical selection is the dedup action
+        bytes_freed += file_size
 
         await db["tracks"].update_one(
             {"_id": loser_id},
