@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 import { Lock, Music2, Play, Headphones } from "lucide-react";
-import { analyticsApi } from "@/api/analytics";
 import { tracksApi } from "@/api/tracks";
 import { usePlayerStore } from "@/store/player";
 import { useAuth } from "@/hooks/useAuth";
@@ -23,26 +22,13 @@ export function NotEnabledPage() {
   const { setQueue } = usePlayerStore();
   const label = ROLE_LABELS[role as Role] ?? "Dashboard";
 
-  const { data: analytics } = useQuery({
-    queryKey: ["analytics-dashboard"],
-    queryFn: analyticsApi.dashboard,
+  const { data: tracksData } = useQuery({
+    queryKey: ["not-enabled-tracks"],
+    queryFn: () => tracksApi.list({ status: "ready", limit: 5 }),
     staleTime: 300_000,
   });
 
-  const topTrackIds = (analytics?.top_tracks ?? []).slice(0, 5).map((t) => t.track_id);
-
-  const { data: trackDetails } = useQuery({
-    queryKey: ["not-enabled-top-tracks", topTrackIds],
-    queryFn: async () => {
-      if (!topTrackIds.length) return [];
-      const results = await Promise.all(topTrackIds.map((id) => tracksApi.get(id)));
-      return results;
-    },
-    enabled: topTrackIds.length > 0,
-    staleTime: 300_000,
-  });
-
-  const tracks = trackDetails ?? [];
+  const tracks = tracksData?.items ?? [];
 
   return (
     <div className="min-h-screen bg-stone-950 flex flex-col items-center justify-center px-6 py-12">
