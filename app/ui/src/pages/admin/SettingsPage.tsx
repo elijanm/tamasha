@@ -389,7 +389,7 @@ export function SettingsPage() {
                 </Card>
               ))
             : storage && [
-                { label: "R2 Objects",    value: formatCount(storage.total_objects),          icon: Package },
+                { label: "Music Tracks",  value: formatCount(storage.total_objects),          icon: Package },
                 { label: "Archive Size",  value: formatFileSize(storage.total_bytes),          icon: HardDrive },
                 { label: "Archive (GB)",  value: `${storage.total_gb.toFixed(3)} GB`,          icon: Database },
               ].map(({ label, value, icon: Icon }) => (
