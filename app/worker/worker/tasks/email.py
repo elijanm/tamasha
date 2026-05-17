@@ -187,6 +187,38 @@ _TEMPLATES: dict[str, str] = {
 </p>
 """,
 
+"invite_link": """
+<h2 style="margin:0 0 16px;font-size:20px;font-weight:700;color:#1c1917;">You've been invited to Tamasha</h2>
+<p style="margin:0 0 16px;font-size:15px;color:#44403c;line-height:1.6;">
+  <strong>{{ invited_by }}</strong> has invited you to join the Tamasha archive platform as a <strong>{{ role | title }}</strong>.
+</p>
+<table width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="border:1px solid #e7e5e4;border-radius:6px;overflow:hidden;margin:0 0 20px;">
+  <tr>
+    <td style="padding:10px 16px;font-size:13px;color:#78716c;background:#f5f5f4;border-bottom:1px solid #e7e5e4;width:40%;">Invited as</td>
+    <td style="padding:10px 16px;font-size:13px;color:#1c1917;border-bottom:1px solid #e7e5e4;font-weight:600;">{{ role | title }}</td>
+  </tr>
+  <tr>
+    <td style="padding:10px 16px;font-size:13px;color:#78716c;background:#f5f5f4;">Link expires</td>
+    <td style="padding:10px 16px;font-size:13px;color:#1c1917;font-weight:600;">7 days</td>
+  </tr>
+</table>
+<p style="margin:0 0 16px;font-size:15px;color:#44403c;line-height:1.6;">
+  Click the button below to create your account. The link is single-use and expires in 7 days.
+</p>
+<table cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;">
+  <tr><td style="background:#7c3aed;border-radius:6px;">
+    <a href="{{ base_url }}/register?token={{ token }}&amp;email={{ email | urlencode }}"
+       style="display:inline-block;padding:12px 24px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;">
+      Create Account
+    </a>
+  </td></tr>
+</table>
+<p style="margin:0;font-size:13px;color:#78716c;line-height:1.6;">
+  If you were not expecting this invitation, you can safely ignore this email.
+</p>
+""",
+
 "billing_reminder": """
 {% if days_until_due == 0 %}
   {% set due_label = "today" %}
@@ -537,6 +569,22 @@ def send_invite(self: Task, user_id: str, email: str, username: str, role: str, 
     _send_email(email, "You have been added to Tamasha", html)
     logger.info("invite_email_sent", user_id=user_id, role=role)
     return {"user_id": user_id, "sent": True}
+
+
+@app.task(
+    name="worker.tasks.email.send_invite_link",
+    bind=True, max_retries=3, default_retry_delay=30,
+    autoretry_for=(Exception,), retry_backoff=True,
+)
+def send_invite_link(self: Task, email: str, role: str, invited_by: str, token: str) -> dict:
+    settings = get_settings()
+    html = _wrap(_jinja.get_template("invite_link").render(
+        base_url=settings.app_base_url, email=email,
+        role=role, invited_by=invited_by, token=token,
+    ))
+    _send_email(email, "You've been invited to Tamasha", html)
+    logger.info("invite_link_email_sent", email=email, role=role)
+    return {"email": email, "sent": True}
 
 
 _BILLING_SUBJECTS = {

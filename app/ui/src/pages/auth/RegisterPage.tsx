@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { Loader2, ArrowRight } from "lucide-react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Loader2, ArrowRight, MailX } from "lucide-react";
+import axios from "axios";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -8,25 +9,63 @@ import { authApi } from "@/api/auth";
 
 export function RegisterPage() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
+  const [searchParams] = useSearchParams();
+
+  const inviteToken = searchParams.get("token") ?? undefined;
+  const inviteEmail = searchParams.get("email") ?? "";
+
+  const [email, setEmail] = useState(inviteEmail);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // No token + invite-only mode: backend will reject with 403
+  // We detect this after the first failed attempt OR show a pre-emptive hint
+  // when there's no token in the URL at all.
+  const isInviteOnly = !inviteToken;
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
     setIsLoading(true);
     try {
-      await authApi.register({ email, username, password });
+      await authApi.register({ email, username, password, invite_token: inviteToken });
       navigate("/login");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Registration failed");
+      if (axios.isAxiosError(err) && err.response?.data) {
+        const detail = err.response.data?.detail;
+        if (typeof detail === "string") {
+          setError(detail);
+        } else if (Array.isArray(detail) && detail.length > 0) {
+          setError(detail.map((e: { msg?: string }) => e.msg ?? "Validation error").join(" · "));
+        } else {
+          setError(`Registration failed (${err.response.status})`);
+        }
+      } else {
+        setError(err instanceof Error ? err.message : "Registration failed");
+      }
     } finally {
       setIsLoading(false);
     }
   };
+
+  if (isInviteOnly) {
+    return (
+      <div className="bg-stone-900/60 border border-stone-800 rounded-xl p-7 shadow-2xl backdrop-blur-sm text-center">
+        <div className="w-12 h-12 rounded-full bg-stone-800 flex items-center justify-center mx-auto mb-4">
+          <MailX className="w-5 h-5 text-stone-500" />
+        </div>
+        <h2 className="font-display text-xl font-semibold text-stone-100 mb-2">Invitation only</h2>
+        <p className="text-sm font-body text-stone-500 mb-5">
+          Registration is by invitation. Ask an administrator to send you an invite link.
+        </p>
+        <Link to="/login" className="text-sm text-violet-400 hover:text-violet-300 transition-colors">
+          Back to sign in
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-stone-900/60 border border-stone-800 rounded-xl p-7 shadow-2xl backdrop-blur-sm">
@@ -54,7 +93,12 @@ export function RegisterPage() {
             onChange={(e) => setUsername(e.target.value)}
             required
             autoFocus
+            minLength={3}
+            maxLength={32}
+            pattern="[a-zA-Z0-9_\-]+"
+            title="Letters, numbers, hyphens, and underscores only"
           />
+          <p className="text-xs font-body text-stone-600">Letters, numbers, hyphens, and underscores only</p>
         </div>
 
         <div className="space-y-1.5">
@@ -66,7 +110,11 @@ export function RegisterPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
+            readOnly={!!inviteEmail}
           />
+          {inviteEmail && (
+            <p className="text-xs font-body text-stone-600">Pre-filled from your invitation</p>
+          )}
         </div>
 
         <div className="space-y-1.5">

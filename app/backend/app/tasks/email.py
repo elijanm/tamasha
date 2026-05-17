@@ -57,6 +57,15 @@ def dispatch_invite_email(user_id: str, email: str, username: str, role: str, in
     return result.id
 
 
+def dispatch_invite_link_email(email: str, role: str, invited_by: str, token: str) -> str:
+    result = celery_app.send_task(
+        "worker.tasks.email.send_invite_link",
+        kwargs={"email": email, "role": role, "invited_by": invited_by, "token": token},
+        queue="email",
+    )
+    return result.id
+
+
 def dispatch_payment_receipt_email(email: str, context: dict) -> str:
     result = celery_app.send_task(
         "worker.tasks.email.send_billing_notification",

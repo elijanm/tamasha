@@ -146,6 +146,74 @@ function InvitePanel({ onClose }: { onClose: () => void }) {
   );
 }
 
+// ── Invite link panel ─────────────────────────────────────────────────────────
+
+function InviteLinkPanel({ onClose }: { onClose: () => void }) {
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<Role>("listener");
+
+  const { mutate, isPending } = useMutation({
+    mutationFn: () => usersApi.sendInviteLink(email, role),
+    onSuccess: () => {
+      toast({ title: "Invite link sent", variant: "success" });
+      onClose();
+    },
+    onError: (err: any) => {
+      toast({ title: err?.response?.data?.detail ?? "Failed to send invite link", variant: "destructive" });
+    },
+  });
+
+  return (
+    <div className="border border-violet-800/40 rounded-xl bg-stone-900/60 backdrop-blur-sm p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-display font-semibold text-stone-200">Send invite link</h3>
+          <p className="text-xs font-body text-stone-500 mt-0.5">User sets their own password during registration</p>
+        </div>
+        <button onClick={onClose} className="text-stone-500 hover:text-stone-300 transition-colors">
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <label className="block text-[10px] font-mono uppercase tracking-wider text-stone-500">Email</label>
+          <Input
+            type="email" placeholder="user@example.com" value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="h-9 text-sm"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="block text-[10px] font-mono uppercase tracking-wider text-stone-500">Role</label>
+          <Select value={role} onValueChange={(v) => setRole(v as Role)}>
+            <SelectTrigger className="h-9 text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {ROLES.map((r) => (
+                <SelectItem key={r} value={r} className="capitalize">{r}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="flex justify-end gap-2 pt-1">
+        <Button variant="ghost" size="sm" onClick={onClose} className="h-8 text-xs">Cancel</Button>
+        <Button
+          size="sm"
+          onClick={() => mutate()}
+          disabled={isPending || !email}
+          className="h-8 text-xs bg-violet-600 hover:bg-violet-500 text-white border-0"
+        >
+          {isPending ? "Sending…" : "Send invite link"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // ── User row ──────────────────────────────────────────────────────────────────
 
 function UserRow({ user }: { user: User }) {
@@ -409,6 +477,7 @@ const PAGE_SIZE = 25;
 
 export function UsersPage() {
   const [showInvite, setShowInvite] = useState(false);
+  const [showInviteLink, setShowInviteLink] = useState(false);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<Role | "all">("all");
   const [skip, setSkip] = useState(0);
@@ -437,15 +506,26 @@ export function UsersPage() {
           <h1 className="font-display text-2xl font-bold text-stone-100">Users</h1>
           <p className="mt-1 text-sm font-body text-stone-500">Manage platform users, roles, and access</p>
         </div>
-        <Button
-          onClick={() => setShowInvite(!showInvite)}
-          className="flex-shrink-0 h-9 text-xs bg-violet-600 hover:bg-violet-500 text-white border-0 gap-1.5"
-        >
-          <UserPlus className="w-3.5 h-3.5" />
-          Invite user
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => { setShowInviteLink(!showInviteLink); setShowInvite(false); }}
+            className="flex-shrink-0 h-9 text-xs gap-1.5"
+          >
+            <Mail className="w-3.5 h-3.5" />
+            Send invite link
+          </Button>
+          <Button
+            onClick={() => { setShowInvite(!showInvite); setShowInviteLink(false); }}
+            className="flex-shrink-0 h-9 text-xs bg-violet-600 hover:bg-violet-500 text-white border-0 gap-1.5"
+          >
+            <UserPlus className="w-3.5 h-3.5" />
+            Create user
+          </Button>
+        </div>
       </div>
 
+      {showInviteLink && <InviteLinkPanel onClose={() => setShowInviteLink(false)} />}
       {showInvite && <InvitePanel onClose={() => setShowInvite(false)} />}
 
       {!isLoading && !isError && allUsers.length > 0 && <StatsBar users={allUsers} />}

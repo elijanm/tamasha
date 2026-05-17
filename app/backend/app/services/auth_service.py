@@ -9,7 +9,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.config import get_settings
 from app.core.audit import write_audit_log
-from app.core.exceptions import ConflictError, NotFoundError, UnauthorizedError
+from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError, UnauthorizedError, ValidationError
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -37,6 +37,7 @@ from app.utils.datetime_utils import utc_now
 logger = structlog.get_logger(__name__)
 
 _RESET_TOKEN_TTL_SECONDS = 3600  # 1 hour
+_INVITE_TOKEN_TTL_DAYS = 7
 
 
 def _build_token_response(user_id: str, role: str) -> TokenResponse:
@@ -51,6 +52,37 @@ def _build_token_response(user_id: str, role: str) -> TokenResponse:
     )
 
 
+async def create_invite_token(
+    db: AsyncIOMotorDatabase,
+    email: str,
+    role: str,
+    invited_by: str,
+) -> str:
+    token = secrets.token_urlsafe(32)
+    now = utc_now()
+    await db["invite_tokens"].insert_one({
+        "email": email.lower(),
+        "role": role,
+        "invited_by": invited_by,
+        "token_hash": hash_password(token),
+        "expires_at": now + timedelta(days=_INVITE_TOKEN_TTL_DAYS),
+        "used": False,
+        "created_at": now,
+    })
+    return token
+
+
+async def _consume_invite_token(db: AsyncIOMotorDatabase, token: str, email: str) -> dict:
+    """Validate a token for the given email and mark it used. Raises on invalid/expired/used."""
+    now = utc_now()
+    cursor = db["invite_tokens"].find({"email": email.lower(), "used": False, "expires_at": {"$gt": now}})
+    async for doc in cursor:
+        if verify_password(token, doc["token_hash"]):
+            await db["invite_tokens"].update_one({"_id": doc["_id"]}, {"$set": {"used": True, "used_at": now}})
+            return doc
+    raise ForbiddenError("Invalid or expired invitation link")
+
+
 async def register(
     db: AsyncIOMotorDatabase,
     request: RegisterRequest,
@@ -58,20 +90,29 @@ async def register(
     actor_ua: str = "",
     request_id: str = "",
 ) -> TokenResponse:
+    settings = get_settings()
+
+    invite_doc: dict | None = None
+    if not settings.allow_registration:
+        if not request.invite_token:
+            raise ForbiddenError("Registration is by invitation only")
+        invite_doc = await _consume_invite_token(db, request.invite_token, str(request.email))
+
     existing = await db["users"].find_one(
         {"$or": [{"email": request.email}, {"username": request.username}]}
     )
     if existing:
-        field = "email" if existing.get("email") == request.email else "username"
+        field = "email" if existing.get("email") == str(request.email) else "username"
         raise ConflictError(f"A user with that {field} already exists")
 
     now = utc_now()
     verification_token = secrets.token_urlsafe(32)
+    role = invite_doc["role"] if invite_doc else "listener"
     doc = {
         "email": request.email,
         "username": request.username,
         "hashed_password": hash_password(request.password),
-        "role": "listener",
+        "role": role,
         "is_active": True,
         "is_verified": False,
         "email_verified_at": None,
@@ -87,7 +128,7 @@ async def register(
     result = await db["users"].insert_one(doc)
     user_id = str(result.inserted_id)
 
-    token_response = _build_token_response(user_id, "listener")
+    token_response = _build_token_response(user_id, role)
     refresh_hash = hash_refresh_token(token_response.refresh_token)
     await db["users"].update_one(
         {"_id": result.inserted_id},
@@ -95,12 +136,12 @@ async def register(
     )
 
     try:
-        dispatch_verification_email(user_id, request.email, verification_token)
+        dispatch_verification_email(user_id, str(request.email), verification_token)
     except Exception as exc:
         logger.warning("verification_email_dispatch_failed", user_id=user_id, error=str(exc))
 
     await write_audit_log(
-        db, actor_id=user_id, actor_role="listener", actor_ip=actor_ip,
+        db, actor_id=user_id, actor_role=role, actor_ip=actor_ip,
         actor_ua=actor_ua, action="user.register", entity_type="user",
         entity_id=user_id, request_id=request_id,
     )

@@ -44,4 +44,8 @@ export const usersApi = {
   sendInvite: async (id: string): Promise<void> => {
     await api.post(`/users/${id}/invite`);
   },
+
+  sendInviteLink: async (email: string, role: Role): Promise<void> => {
+    await api.post("/users/invite-link", { email, role });
+  },
 };

@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     # ─── Rate Limiting ───────────────────────────────────────────────────────
     rate_limit_per_minute: int = 60
 
+    # ─── Registration ────────────────────────────────────────────────────────
+    allow_registration: bool = False  # when False, /auth/register requires a valid invite token
+
     # ─── Seed Admin ──────────────────────────────────────────────────────────
     seed_admin_email: str = "admin@tamasha.com"
     seed_admin_username: str = "admin"

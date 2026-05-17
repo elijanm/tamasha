@@ -1,19 +1,22 @@
+name: tamasha
 services:
 
   # ── Infrastructure ────────────────────────────────────────────────────────────
-
+  
   mongodb:
     image: mongo:7.0
     container_name: tamasha_mongodb
     restart: unless-stopped
     ports:
-      - "27017:27017"
+      - "127.0.0.1:27017:27017"
     volumes:
       - mongodb_data:/data/db
     environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
       MONGO_INITDB_DATABASE: tamasha
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD-SHELL", "mongosh --username $$MONGO_INITDB_ROOT_USERNAME --password $$MONGO_INITDB_ROOT_PASSWORD --eval \"db.adminCommand('ping')\" --quiet"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -46,10 +49,11 @@ services:
       - "8000:8000"
     env_file: ./app/backend/.env
     environment:
-      MONGO_URL: mongodb://mongodb:27017
+      MONGO_URL: mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongodb:27017/tamasha?authSource=admin
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
+      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false}
     depends_on:
       mongodb:
         condition: service_healthy
@@ -73,10 +77,11 @@ services:
       - "8000:8000"
     env_file: ./app/backend/.env
     environment:
-      MONGO_URL: mongodb://mongodb:27017
+      MONGO_URL: mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongodb:27017/tamasha?authSource=admin
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
+      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false}
     depends_on:
       mongodb:
         condition: service_healthy
@@ -95,14 +100,14 @@ services:
     restart: unless-stopped
     env_file: ./app/worker/.env
     environment:
-      MONGO_URL: mongodb://mongodb:27017
+      MONGO_URL: mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongodb:27017/tamasha?authSource=admin
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
-      RESEND_API_KEY: ${RESEND_API_KEY}
-      EMAIL_FROM: "${EMAIL_FROM}"
-      SANDBOX_EMAIL: "${SANDBOX_EMAIL}"
-      INVOICE_EMAIL: "${INVOICE_EMAIL}"
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      SANDBOX_EMAIL: ${SANDBOX_EMAIL:-}
+      INVOICE_EMAIL: ${INVOICE_EMAIL:-}
     depends_on:
       mongodb:
         condition: service_healthy

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query, Request
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from pydantic import BaseModel, EmailStr
 
 from app.core.pagination import PageParams
 from app.core.rbac import require_permission
@@ -14,10 +15,15 @@ from app.schemas.user import (
     UserRoleUpdateRequest,
     UserUpdateRequest,
 )
-from app.services import user_service
-from app.tasks.email import dispatch_invite_email
+from app.services import auth_service, user_service
+from app.tasks.email import dispatch_invite_email, dispatch_invite_link_email
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+
+class InviteLinkRequest(BaseModel):
+    email: EmailStr
+    role: str = "listener"
 
 
 def _ctx(request: Request) -> dict:
@@ -78,6 +84,23 @@ async def send_invite(
         username=user.username,
         role=user.role,
         invited_by=actor.username,
+    )
+
+
+@router.post("/invite-link", status_code=204)
+async def send_invite_link(
+    body: InviteLinkRequest,
+    actor: UserDocument = require_permission("*"),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+) -> None:
+    token = await auth_service.create_invite_token(
+        db, str(body.email), body.role, actor.username
+    )
+    dispatch_invite_link_email(
+        email=str(body.email),
+        role=body.role,
+        invited_by=actor.username,
+        token=token,
     )
 
 
