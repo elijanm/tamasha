@@ -31,7 +31,7 @@ async def list_sync_jobs(
     status: str | None = Query(default=None),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
-    _actor: UserDocument = require_permission("*"),
+    _actor: UserDocument = require_permission("sync_job.read"),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ) -> SyncJobListResponse:
     page = PageParams(skip=skip, limit=limit)
