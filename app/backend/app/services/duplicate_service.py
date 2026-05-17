@@ -7,6 +7,7 @@ from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.config import get_settings
+from app.core.audit import write_audit_log
 from app.core.exceptions import NotFoundError
 from app.core.pagination import PageParams
 from app.models.duplicate import DuplicateGroupDocument, QualityBreakdown
@@ -345,4 +346,15 @@ async def resolve_group(
     )
 
     updated = await _get_group(db, group_id)
+    await write_audit_log(
+        db,
+        actor_id=actor_id,
+        actor_role="",
+        actor_ip="",
+        actor_ua="",
+        action="duplicate.resolve",
+        entity_type="duplicate_group",
+        entity_id=group_id,
+        after={"canonical_track_id": str(canonical_id), "losers": [str(i) for i in loser_ids], "bytes_freed": bytes_freed},
+    )
     return _group_to_response(updated)

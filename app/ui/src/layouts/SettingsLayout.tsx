@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { Settings2, Users, ScrollText, Palette, Copy, Receipt } from "lucide-react";
+import { Settings2, Users, ScrollText, Palette, Copy, Receipt, ClipboardCheck } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 
 export function SettingsLayout() {
@@ -16,6 +16,9 @@ export function SettingsLayout() {
     { label: "Duplicates", to: "/admin/settings/duplicates",    icon: Copy,       end: false },
     ...(hasAccounting
       ? [{ label: "Billing", to: "/admin/settings/billing", icon: Receipt, end: false }]
+      : []),
+    ...(isStaff
+      ? [{ label: "My Work", to: "/admin/settings/my-work", icon: ClipboardCheck, end: false }]
       : []),
   ];
 

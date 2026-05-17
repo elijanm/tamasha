@@ -19,6 +19,7 @@ import { MediaMonitoringPage } from "@/pages/admin/MediaMonitoringPage";
 import { ThemesPage } from "@/pages/admin/settings/ThemesPage";
 import { DuplicatesPage } from "@/pages/admin/settings/DuplicatesPage";
 import { BillingPage } from "@/pages/admin/settings/BillingPage";
+import { MyWorkPage } from "@/pages/staff/MyWorkPage";
 import { ListenerHome } from "@/pages/listener/ListenerHome";
 import { BillingDashboard } from "@/pages/superadmin/BillingDashboard";
 import { SuperadminSettingsPage } from "@/pages/superadmin/SuperadminSettingsPage";
@@ -80,6 +81,7 @@ function AppRoutes() {
           <Route path="themes" element={<ThemesPage />} />
           <Route path="duplicates" element={<DuplicatesPage />} />
           <Route path="billing" element={<BillingPage />} />
+          <Route path="my-work" element={<MyWorkPage />} />
         </Route>
         <Route path="/admin/media-monitoring" element={<MediaMonitoringPage />} />
       </Route>

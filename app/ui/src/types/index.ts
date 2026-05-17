@@ -384,6 +384,30 @@ export interface AuditLog {
   occurred_at: string;
 }
 
+// ─── My Work ──────────────────────────────────────────────────────────────────
+
+export interface WorkTotals {
+  total_actions: number;
+  tracks_created: number;
+  tracks_updated: number;
+  tracks_deleted: number;
+  tracks_assigned_artist: number;
+  tracks_artwork_updated: number;
+  uploads_completed: number;
+  artists_created: number;
+  artists_updated: number;
+  duplicates_resolved: number;
+}
+
+export interface WorkSummary {
+  from_date: string;
+  to_date: string;
+  totals: WorkTotals;
+  action_counts: { action: string; count: number }[];
+  timeline: { bucket: string; count: number }[];
+  projected_today: number | null;
+}
+
 // ─── Media Monitoring ─────────────────────────────────────────────────────────
 
 export interface RadioStation {
