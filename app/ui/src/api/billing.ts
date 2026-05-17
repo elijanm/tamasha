@@ -1,6 +1,7 @@
 import { api } from "./client";
 import type {
   BillingGateStatus,
+  CostLineType,
   Invoice,
   PagedResponse,
   PaymentArrangement,
@@ -17,10 +18,16 @@ export interface CreateArrangementRequest {
   notes?: string;
 }
 
-export interface SetPlatformCostRequest {
-  monthly_amount_usd: number;
+export interface AddLineItemRequest {
+  description: string;
+  amount_usd: number;
+  type: CostLineType;
+}
+
+export interface UpdateLineItemRequest {
   description?: string;
-  reminder_days?: number[];
+  amount_usd?: number;
+  is_active?: boolean;
 }
 
 export interface GenerateInvoiceRequest {
@@ -41,8 +48,23 @@ export const billingApi = {
     return res.data;
   },
 
-  setConfig: async (payload: SetPlatformCostRequest): Promise<PlatformCostConfig> => {
-    const res = await api.put<PlatformCostConfig>("/billing/config", payload);
+  addLineItem: async (payload: AddLineItemRequest): Promise<PlatformCostConfig> => {
+    const res = await api.post<PlatformCostConfig>("/billing/config/items", payload);
+    return res.data;
+  },
+
+  updateLineItem: async (itemId: string, payload: UpdateLineItemRequest): Promise<PlatformCostConfig> => {
+    const res = await api.patch<PlatformCostConfig>(`/billing/config/items/${itemId}`, payload);
+    return res.data;
+  },
+
+  removeLineItem: async (itemId: string): Promise<PlatformCostConfig> => {
+    const res = await api.delete<PlatformCostConfig>(`/billing/config/items/${itemId}`);
+    return res.data;
+  },
+
+  setReminderDays: async (reminder_days: number[]): Promise<PlatformCostConfig> => {
+    const res = await api.patch<PlatformCostConfig>("/billing/config/reminders", { reminder_days });
     return res.data;
   },
 

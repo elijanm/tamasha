@@ -53,21 +53,35 @@ async def _async_generate_invoice(log) -> dict:
         log.info("monthly_invoice_exists", month=month, year=year)
         return {"skipped": True, "month": month, "year": year}
 
-    cfg = await db["platform_cost"].find_one({"is_active": True})
+    cfg = await db["platform_cost"].find_one({}, sort=[("created_at", -1)])
     if not cfg:
         log.warning("no_platform_cost_configured")
         return {"skipped": True, "reason": "no_config"}
+
+    # Compute amount from line items
+    items = cfg.get("line_items", [])
+    amount = sum(
+        i["amount_usd"] for i in items
+        if i.get("is_active") and (
+            i.get("type") == "monthly"
+            or (i.get("type") == "one_time" and not i.get("used_in_invoice_id"))
+        )
+    )
+    amount = round(amount, 2)
+    if amount == 0:
+        log.warning("platform_cost_zero_amount")
+        return {"skipped": True, "reason": "zero_amount"}
 
     due_date = _month_end(year, month)
     doc = {
         "period_month": month,
         "period_year": year,
-        "amount_usd": cfg["monthly_amount_usd"],
+        "amount_usd": amount,
         "paid_amount_usd": 0.0,
         "status": "pending",
         "due_date": due_date,
         "paid_at": None,
-        "notes": cfg.get("description"),
+        "notes": None,
         "data_export_r2_key": None,
         "data_export_expires_at": None,
         "reminders_sent": [],
@@ -76,8 +90,20 @@ async def _async_generate_invoice(log) -> dict:
         "updated_at": now,
     }
     result = await db["invoices"].insert_one(doc)
-    log.info("monthly_invoice_created", invoice_id=str(result.inserted_id), amount=cfg["monthly_amount_usd"])
-    return {"invoice_id": str(result.inserted_id), "month": month, "year": year}
+    invoice_id = str(result.inserted_id)
+
+    # Mark one-time items as used
+    await db["platform_cost"].update_one(
+        {"_id": cfg["_id"]},
+        {"$set": {
+            "line_items.$[elem].used_in_invoice_id": invoice_id,
+            "updated_at": now,
+        }},
+        array_filters=[{"elem.type": "one_time", "elem.is_active": True, "elem.used_in_invoice_id": None}],
+    )
+
+    log.info("monthly_invoice_created", invoice_id=invoice_id, amount=amount)
+    return {"invoice_id": invoice_id, "month": month, "year": year}
 
 
 # ── Daily escalation ──────────────────────────────────────────────────────────
@@ -156,7 +182,7 @@ async def _async_send_reminders(log) -> dict:
 
     # Pre-due reminders for pending invoices
     cursor = db["invoices"].find({"status": {"$in": ["pending", "partial"]}})
-    cfg = await db["platform_cost"].find_one({"is_active": True})
+    cfg = await db["platform_cost"].find_one({}, sort=[("created_at", -1)])
     reminder_days: list[int] = cfg.get("reminder_days", [14, 7, 1]) if cfg else [14, 7, 1]
 
     async for doc in cursor:

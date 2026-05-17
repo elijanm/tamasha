@@ -2,23 +2,45 @@ from __future__ import annotations
 
 from calendar import monthrange
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
 
-class PlatformCostResponse(BaseModel):
+class CostLineItemResponse(BaseModel):
     id: str
-    monthly_amount_usd: float
     description: str
+    amount_usd: float
+    type: Literal["monthly", "one_time"]
     is_active: bool
-    reminder_days: list[int]
+    used_in_invoice_id: str | None
     created_at: datetime
 
 
-class SetPlatformCostRequest(BaseModel):
-    monthly_amount_usd: float = Field(..., gt=0, description="Monthly cost in USD")
-    description: str = "Monthly platform operating costs"
-    reminder_days: list[int] = Field(default=[14, 7, 1])
+class PlatformCostResponse(BaseModel):
+    id: str
+    line_items: list[CostLineItemResponse]
+    reminder_days: list[int]
+    monthly_total_usd: float   # sum of active monthly items
+    one_time_total_usd: float  # sum of active one_time items (pending billing)
+    created_at: datetime
+    updated_at: datetime
+
+
+class AddLineItemRequest(BaseModel):
+    description: str = Field(..., min_length=1, max_length=200)
+    amount_usd: float = Field(..., gt=0)
+    type: Literal["monthly", "one_time"] = "monthly"
+
+
+class UpdateLineItemRequest(BaseModel):
+    description: str | None = Field(default=None, min_length=1, max_length=200)
+    amount_usd: float | None = Field(default=None, gt=0)
+    is_active: bool | None = None
+
+
+class SetReminderDaysRequest(BaseModel):
+    reminder_days: list[int] = Field(..., min_length=1)
 
 
 class InvoiceResponse(BaseModel):

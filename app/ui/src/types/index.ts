@@ -511,13 +511,26 @@ export interface DuplicateMetrics {
 
 // ─── Billing ──────────────────────────────────────────────────────────────────
 
+export type CostLineType = "monthly" | "one_time";
+
+export interface CostLineItem {
+  id: string;
+  description: string;
+  amount_usd: number;
+  type: CostLineType;
+  is_active: boolean;
+  used_in_invoice_id: string | null;
+  created_at: string;
+}
+
 export interface PlatformCostConfig {
   id: string;
-  monthly_amount_usd: number;
-  description: string;
-  is_active: boolean;
+  line_items: CostLineItem[];
   reminder_days: number[];
+  monthly_total_usd: number;
+  one_time_total_usd: number;
   created_at: string;
+  updated_at: string;
 }
 
 export interface Invoice {

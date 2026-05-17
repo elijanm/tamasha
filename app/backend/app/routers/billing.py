@@ -7,6 +7,7 @@ from app.core.exceptions import ForbiddenError, NotFoundError
 from app.dependencies import get_current_active_user, get_db
 from app.models.user import UserDocument
 from app.schemas.billing import (
+    AddLineItemRequest,
     BillingGateStatus,
     CreateArrangementRequest,
     GenerateInvoiceRequest,
@@ -14,7 +15,8 @@ from app.schemas.billing import (
     PaymentArrangementResponse,
     PlatformCostResponse,
     RecordPaymentRequest,
-    SetPlatformCostRequest,
+    SetReminderDaysRequest,
+    UpdateLineItemRequest,
 )
 from app.services import billing_service
 
@@ -45,42 +47,65 @@ async def gate_status(
 
 @router.get("/config", response_model=PlatformCostResponse | None)
 async def get_config(
-    actor: UserDocument = _require_superadmin,
+    actor: UserDocument = Depends(_require_superadmin),
     db: AsyncIOMotorDatabase = Depends(get_db),
-):
-    cfg = await billing_service.get_platform_cost(db)
-    if not cfg:
+) -> PlatformCostResponse | None:
+    doc = await billing_service._get_cost_doc(db)
+    if not doc:
         return None
-    return PlatformCostResponse(
-        id=str(cfg.id),
-        monthly_amount_usd=cfg.monthly_amount_usd,
-        description=cfg.description,
-        is_active=cfg.is_active,
-        reminder_days=cfg.reminder_days,
-        created_at=cfg.created_at,
-    )
+    return billing_service._cost_to_response(doc)
 
 
-@router.put("/config", response_model=PlatformCostResponse)
-async def set_config(
-    body: SetPlatformCostRequest,
-    actor: UserDocument = _require_superadmin,
+@router.post("/config/items", response_model=PlatformCostResponse, status_code=201)
+async def add_line_item(
+    body: AddLineItemRequest,
+    actor: UserDocument = Depends(_require_superadmin),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ) -> PlatformCostResponse:
-    cfg = await billing_service.upsert_platform_cost(
+    return await billing_service.add_line_item(
         db,
-        monthly_amount_usd=body.monthly_amount_usd,
         description=body.description,
-        reminder_days=body.reminder_days,
+        amount_usd=body.amount_usd,
+        item_type=body.type,
         created_by=str(actor.id),
     )
-    return PlatformCostResponse(
-        id=str(cfg.id),
-        monthly_amount_usd=cfg.monthly_amount_usd,
-        description=cfg.description,
-        is_active=cfg.is_active,
-        reminder_days=cfg.reminder_days,
-        created_at=cfg.created_at,
+
+
+@router.patch("/config/items/{item_id}", response_model=PlatformCostResponse)
+async def update_line_item(
+    item_id: str,
+    body: UpdateLineItemRequest,
+    actor: UserDocument = Depends(_require_superadmin),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+) -> PlatformCostResponse:
+    return await billing_service.update_line_item(
+        db,
+        item_id=item_id,
+        description=body.description,
+        amount_usd=body.amount_usd,
+        is_active=body.is_active,
+    )
+
+
+@router.delete("/config/items/{item_id}", response_model=PlatformCostResponse)
+async def remove_line_item(
+    item_id: str,
+    actor: UserDocument = Depends(_require_superadmin),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+) -> PlatformCostResponse:
+    return await billing_service.remove_line_item(db, item_id=item_id)
+
+
+@router.patch("/config/reminders", response_model=PlatformCostResponse)
+async def set_reminder_days(
+    body: SetReminderDaysRequest,
+    actor: UserDocument = Depends(_require_superadmin),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+) -> PlatformCostResponse:
+    return await billing_service.set_reminder_days(
+        db,
+        reminder_days=body.reminder_days,
+        created_by=str(actor.id),
     )
 
 
@@ -90,7 +115,7 @@ async def set_config(
 async def list_invoices(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
-    actor: UserDocument = _require_superadmin,
+    actor: UserDocument = Depends(_require_superadmin),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ) -> dict:
     docs, total = await billing_service.list_invoices(db, skip=skip, limit=limit)
@@ -105,16 +130,14 @@ async def list_invoices(
 @router.post("/invoices", response_model=InvoiceResponse, status_code=201)
 async def create_invoice(
     body: GenerateInvoiceRequest,
-    actor: UserDocument = _require_superadmin,
+    actor: UserDocument = Depends(_require_superadmin),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ) -> InvoiceResponse:
-    # Resolve amount from config if not supplied
     amount = body.amount_usd
     if amount is None:
-        cfg = await billing_service.get_platform_cost(db)
-        if not cfg:
+        amount = await billing_service._compute_invoice_amount(db)
+        if amount == 0:
             raise HTTPException(400, "No platform cost configured and no amount provided")
-        amount = cfg.monthly_amount_usd
 
     doc = await billing_service.create_invoice(
         db,
@@ -124,13 +147,14 @@ async def create_invoice(
         created_by=str(actor.id),
         notes=body.notes,
     )
+    await billing_service._mark_one_time_items_used(db, str(doc["_id"]))
     return billing_service._to_invoice_response(doc)
 
 
 @router.get("/invoices/{invoice_id}", response_model=InvoiceResponse)
 async def get_invoice(
     invoice_id: str,
-    actor: UserDocument = _require_superadmin,
+    actor: UserDocument = Depends(_require_superadmin),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ) -> InvoiceResponse:
     doc = await billing_service.get_invoice(db, invoice_id)
@@ -143,7 +167,7 @@ async def get_invoice(
 async def record_payment(
     invoice_id: str,
     body: RecordPaymentRequest,
-    actor: UserDocument = _require_superadmin,
+    actor: UserDocument = Depends(_require_superadmin),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ) -> InvoiceResponse:
     doc = await billing_service.record_payment(
@@ -160,7 +184,7 @@ async def record_payment(
 async def create_arrangement(
     invoice_id: str,
     body: CreateArrangementRequest,
-    actor: UserDocument = _require_superadmin,
+    actor: UserDocument = Depends(_require_superadmin),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ) -> PaymentArrangementResponse:
     arr = await billing_service.create_arrangement(

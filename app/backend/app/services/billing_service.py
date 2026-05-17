@@ -8,6 +8,7 @@ from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.models.billing import (
+    CostLineItem,
     InvoiceDocument,
     PaymentArrangementDocument,
     PaymentRecordDocument,
@@ -15,6 +16,7 @@ from app.models.billing import (
 )
 from app.schemas.billing import (
     BillingGateStatus,
+    CostLineItemResponse,
     InvoiceResponse,
     PaymentArrangementResponse,
     PaymentRecordResponse,
@@ -77,32 +79,153 @@ def _to_invoice_response(doc: dict) -> InvoiceResponse:
 
 # ── Platform cost config ───────────────────────────────────────────────────────
 
-async def get_platform_cost(db: AsyncIOMotorDatabase) -> PlatformCostDocument | None:
-    doc = await db["platform_cost"].find_one({"is_active": True})
-    return PlatformCostDocument.model_validate(doc) if doc else None
+async def _get_cost_doc(db: AsyncIOMotorDatabase) -> dict | None:
+    return await db["platform_cost"].find_one({}, sort=[("created_at", -1)])
 
 
-async def upsert_platform_cost(
-    db: AsyncIOMotorDatabase,
-    monthly_amount_usd: float,
-    description: str,
-    reminder_days: list[int],
-    created_by: str,
-) -> PlatformCostDocument:
+async def _ensure_cost_doc(db: AsyncIOMotorDatabase, created_by: str) -> dict:
+    doc = await _get_cost_doc(db)
+    if doc:
+        return doc
     now = _utc_now()
-    await db["platform_cost"].update_many({"is_active": True}, {"$set": {"is_active": False}})
-    doc = {
-        "monthly_amount_usd": monthly_amount_usd,
-        "description": description,
-        "is_active": True,
-        "reminder_days": sorted(reminder_days, reverse=True),
+    new_doc = {
+        "line_items": [],
+        "reminder_days": [14, 7, 1],
         "created_by": created_by,
         "created_at": now,
         "updated_at": now,
     }
-    result = await db["platform_cost"].insert_one(doc)
-    doc["_id"] = result.inserted_id
-    return PlatformCostDocument.model_validate(doc)
+    result = await db["platform_cost"].insert_one(new_doc)
+    new_doc["_id"] = result.inserted_id
+    return new_doc
+
+
+async def get_platform_cost(db: AsyncIOMotorDatabase) -> PlatformCostDocument | None:
+    doc = await _get_cost_doc(db)
+    return PlatformCostDocument.model_validate(doc) if doc else None
+
+
+def _cost_to_response(doc: dict) -> PlatformCostResponse:
+    items = [CostLineItem.model_validate(i) for i in doc.get("line_items", [])]
+    monthly_total = sum(i.amount_usd for i in items if i.type == "monthly" and i.is_active)
+    one_time_total = sum(i.amount_usd for i in items if i.type == "one_time" and i.is_active and not i.used_in_invoice_id)
+    return PlatformCostResponse(
+        id=str(doc["_id"]),
+        line_items=[
+            CostLineItemResponse(
+                id=i.id,
+                description=i.description,
+                amount_usd=i.amount_usd,
+                type=i.type,
+                is_active=i.is_active,
+                used_in_invoice_id=i.used_in_invoice_id,
+                created_at=i.created_at,
+            )
+            for i in items
+        ],
+        reminder_days=doc.get("reminder_days", [14, 7, 1]),
+        monthly_total_usd=round(monthly_total, 2),
+        one_time_total_usd=round(one_time_total, 2),
+        created_at=doc["created_at"],
+        updated_at=doc["updated_at"],
+    )
+
+
+async def add_line_item(
+    db: AsyncIOMotorDatabase,
+    description: str,
+    amount_usd: float,
+    item_type: str,
+    created_by: str,
+) -> PlatformCostResponse:
+    import uuid
+    now = _utc_now()
+    doc = await _ensure_cost_doc(db, created_by)
+    new_item = {
+        "id": str(uuid.uuid4()),
+        "description": description,
+        "amount_usd": amount_usd,
+        "type": item_type,
+        "is_active": True,
+        "used_in_invoice_id": None,
+        "created_at": now,
+    }
+    await db["platform_cost"].update_one(
+        {"_id": doc["_id"]},
+        {"$push": {"line_items": new_item}, "$set": {"updated_at": now}},
+    )
+    updated = await _get_cost_doc(db)
+    return _cost_to_response(updated)
+
+
+async def update_line_item(
+    db: AsyncIOMotorDatabase,
+    item_id: str,
+    description: str | None,
+    amount_usd: float | None,
+    is_active: bool | None,
+) -> PlatformCostResponse:
+    now = _utc_now()
+    updates: dict = {"updated_at": now}
+    if description is not None:
+        updates["line_items.$[elem].description"] = description
+    if amount_usd is not None:
+        updates["line_items.$[elem].amount_usd"] = amount_usd
+    if is_active is not None:
+        updates["line_items.$[elem].is_active"] = is_active
+    await db["platform_cost"].update_one(
+        {},
+        {"$set": updates},
+        array_filters=[{"elem.id": item_id}],
+    )
+    doc = await _get_cost_doc(db)
+    return _cost_to_response(doc)
+
+
+async def remove_line_item(db: AsyncIOMotorDatabase, item_id: str) -> PlatformCostResponse:
+    now = _utc_now()
+    await db["platform_cost"].update_one(
+        {},
+        {"$pull": {"line_items": {"id": item_id}}, "$set": {"updated_at": now}},
+    )
+    doc = await _get_cost_doc(db)
+    return _cost_to_response(doc)
+
+
+async def set_reminder_days(db: AsyncIOMotorDatabase, reminder_days: list[int], created_by: str) -> PlatformCostResponse:
+    now = _utc_now()
+    doc = await _ensure_cost_doc(db, created_by)
+    await db["platform_cost"].update_one(
+        {"_id": doc["_id"]},
+        {"$set": {"reminder_days": sorted(reminder_days, reverse=True), "updated_at": now}},
+    )
+    updated = await _get_cost_doc(db)
+    return _cost_to_response(updated)
+
+
+async def _compute_invoice_amount(db: AsyncIOMotorDatabase) -> float:
+    """Sum active monthly + pending one-time line items."""
+    doc = await _get_cost_doc(db)
+    if not doc:
+        return 0.0
+    items = [CostLineItem.model_validate(i) for i in doc.get("line_items", [])]
+    total = sum(i.amount_usd for i in items if i.is_active and (
+        i.type == "monthly" or (i.type == "one_time" and not i.used_in_invoice_id)
+    ))
+    return round(total, 2)
+
+
+async def _mark_one_time_items_used(db: AsyncIOMotorDatabase, invoice_id: str) -> None:
+    """After an invoice is created, mark all pending one-time items as used."""
+    now = _utc_now()
+    await db["platform_cost"].update_one(
+        {},
+        {"$set": {
+            "line_items.$[elem].used_in_invoice_id": invoice_id,
+            "updated_at": now,
+        }},
+        array_filters=[{"elem.type": "one_time", "elem.is_active": True, "elem.used_in_invoice_id": None}],
+    )
 
 
 # ── Invoice CRUD ───────────────────────────────────────────────────────────────
@@ -211,8 +334,7 @@ async def create_arrangement(
         raise ValueError("Invoice not found")
 
     balance = invoice["amount_usd"] - invoice["paid_amount_usd"]
-    cost_cfg = await get_platform_cost(db)
-    next_month_cost = cost_cfg.monthly_amount_usd if cost_cfg else 0.0
+    next_month_cost = await _compute_invoice_amount(db)
     total = round(balance + next_month_cost, 2)
 
     # Split evenly across installments, remainder added to last

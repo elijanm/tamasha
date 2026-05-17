@@ -11,9 +11,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import type { AddLineItemRequest, UpdateLineItemRequest } from "@/api/billing";
 import { billingApi } from "@/api/billing";
 import { toast } from "@/hooks/useToast";
-import type { Invoice, PlatformCostConfig } from "@/types";
+import type { CostLineItem, CostLineType, Invoice, PlatformCostConfig } from "@/types";
 
 function formatUSD(n: number) {
   return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -35,24 +36,202 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.
 
 // ── Platform cost config panel ────────────────────────────────────────────────
 
-function CostConfigPanel({ config }: { config: PlatformCostConfig | null }) {
+const TYPE_LABELS: Record<CostLineType, string> = {
+  monthly: "Monthly",
+  one_time: "One-time",
+};
+
+function LineItemRow({ item }: { item: CostLineItem }) {
   const qc = useQueryClient();
-  const [open, setOpen] = useState(!config);
-  const [amount, setAmount] = useState(config?.monthly_amount_usd?.toString() ?? "");
-  const [desc, setDesc] = useState(config?.description ?? "Monthly platform operating costs");
+  const [editing, setEditing] = useState(false);
+  const [desc, setDesc] = useState(item.description);
+  const [amount, setAmount] = useState(item.amount_usd.toString());
+
+  const { mutate: toggleActive, isPending: toggling } = useMutation({
+    mutationFn: () => billingApi.updateLineItem(item.id, { is_active: !item.is_active }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["billing", "config"] }),
+    onError: () => toast({ title: "Failed to update item", variant: "destructive" }),
+  });
+
+  const { mutate: saveEdit, isPending: saving } = useMutation({
+    mutationFn: () => billingApi.updateLineItem(item.id, {
+      description: desc,
+      amount_usd: parseFloat(amount),
+    } as UpdateLineItemRequest),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["billing", "config"] });
+      toast({ title: "Item updated", variant: "success" });
+      setEditing(false);
+    },
+    onError: () => toast({ title: "Failed to save", variant: "destructive" }),
+  });
+
+  const { mutate: remove, isPending: removing } = useMutation({
+    mutationFn: () => billingApi.removeLineItem(item.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["billing", "config"] });
+      toast({ title: "Item removed", variant: "success" });
+    },
+    onError: () => toast({ title: "Failed to remove item", variant: "destructive" }),
+  });
+
+  const isBilled = !!item.used_in_invoice_id;
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-2 py-2 border-b border-stone-800/60">
+        <Input
+          value={desc}
+          onChange={(e) => setDesc(e.target.value)}
+          className="h-8 text-xs flex-1"
+          placeholder="Description"
+        />
+        <div className="relative w-28 flex-shrink-0">
+          <DollarSign className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-stone-500" />
+          <Input
+            type="number" min="0.01" step="0.01"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            className="h-8 pl-6 text-xs"
+          />
+        </div>
+        <Button
+          size="sm" variant="ghost"
+          onClick={() => saveEdit()}
+          disabled={saving || !desc || !amount || parseFloat(amount) <= 0}
+          className="h-8 text-xs text-emerald-400 hover:text-emerald-300 px-2"
+        >
+          {saving ? "…" : "Save"}
+        </Button>
+        <Button
+          size="sm" variant="ghost"
+          onClick={() => { setDesc(item.description); setAmount(item.amount_usd.toString()); setEditing(false); }}
+          className="h-8 text-xs text-stone-500 hover:text-stone-300 px-2"
+        >
+          Cancel
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`flex items-center gap-3 py-2.5 border-b border-stone-800/40 last:border-0 ${!item.is_active ? "opacity-50" : ""}`}>
+      <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded flex-shrink-0 ${
+        item.type === "monthly" ? "bg-violet-500/10 text-violet-400" : "bg-amber-500/10 text-amber-400"
+      }`}>
+        {TYPE_LABELS[item.type]}
+      </span>
+      <span className="flex-1 text-sm text-stone-300 truncate">{item.description}</span>
+      {isBilled && (
+        <span className="text-[10px] font-mono text-stone-600 flex-shrink-0">billed</span>
+      )}
+      <span className="text-sm font-mono font-semibold text-stone-200 flex-shrink-0">
+        {formatUSD(item.amount_usd)}
+      </span>
+      <div className="flex items-center gap-1 flex-shrink-0">
+        <Button
+          size="sm" variant="ghost"
+          onClick={() => setEditing(true)}
+          disabled={isBilled}
+          className="h-7 w-7 p-0 text-stone-500 hover:text-stone-300"
+          title="Edit"
+        >
+          <Settings className="w-3.5 h-3.5" />
+        </Button>
+        <Button
+          size="sm" variant="ghost"
+          onClick={() => toggleActive()}
+          disabled={toggling}
+          className={`h-7 w-7 p-0 ${item.is_active ? "text-emerald-500 hover:text-emerald-400" : "text-stone-600 hover:text-stone-400"}`}
+          title={item.is_active ? "Deactivate" : "Activate"}
+        >
+          <CheckCircle2 className="w-3.5 h-3.5" />
+        </Button>
+        <Button
+          size="sm" variant="ghost"
+          onClick={() => remove()}
+          disabled={removing || isBilled}
+          className="h-7 w-7 p-0 text-stone-600 hover:text-red-400"
+          title="Remove"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function AddLineItemForm({ onDone }: { onDone: () => void }) {
+  const qc = useQueryClient();
+  const [desc, setDesc] = useState("");
+  const [amount, setAmount] = useState("");
+  const [type, setType] = useState<CostLineType>("monthly");
 
   const { mutate, isPending } = useMutation({
-    mutationFn: () => billingApi.setConfig({
-      monthly_amount_usd: parseFloat(amount),
-      description: desc,
-    }),
+    mutationFn: () => billingApi.addLineItem({ description: desc, amount_usd: parseFloat(amount), type } as AddLineItemRequest),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["billing"] });
-      toast({ title: "Platform cost updated", variant: "success" });
-      setOpen(false);
+      qc.invalidateQueries({ queryKey: ["billing", "config"] });
+      toast({ title: "Line item added", variant: "success" });
+      setDesc(""); setAmount(""); setType("monthly");
+      onDone();
     },
-    onError: () => toast({ title: "Failed to update config", variant: "destructive" }),
+    onError: () => toast({ title: "Failed to add item", variant: "destructive" }),
   });
+
+  return (
+    <div className="pt-3 border-t border-stone-800/60 space-y-3">
+      <p className="text-[10px] font-mono uppercase tracking-wider text-stone-500">New Line Item</p>
+      <div className="flex flex-wrap gap-2">
+        <Input
+          value={desc}
+          onChange={(e) => setDesc(e.target.value)}
+          className="h-8 text-xs flex-1 min-w-40"
+          placeholder="Description (e.g. Hosting, Balance b/f)"
+        />
+        <div className="relative w-28 flex-shrink-0">
+          <DollarSign className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-stone-500" />
+          <Input
+            type="number" min="0.01" step="0.01"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            className="h-8 pl-6 text-xs"
+            placeholder="0.00"
+          />
+        </div>
+        <Select value={type} onValueChange={(v) => setType(v as CostLineType)}>
+          <SelectTrigger className="h-8 text-xs w-32 flex-shrink-0"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="monthly">Monthly</SelectItem>
+            <SelectItem value="one_time">One-time</SelectItem>
+          </SelectContent>
+        </Select>
+        <Button
+          size="sm"
+          onClick={() => mutate()}
+          disabled={isPending || !desc || !amount || parseFloat(amount) <= 0}
+          className="h-8 text-xs bg-violet-600 hover:bg-violet-500 text-white border-0 flex-shrink-0"
+        >
+          {isPending ? "Adding…" : "Add"}
+        </Button>
+        <Button
+          size="sm" variant="ghost"
+          onClick={onDone}
+          className="h-8 text-xs text-stone-500 flex-shrink-0"
+        >
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function CostConfigPanel({ config }: { config: PlatformCostConfig | null }) {
+  const [open, setOpen] = useState(!config || config.line_items.length === 0);
+  const [addingItem, setAddingItem] = useState(false);
+
+  const items = config?.line_items ?? [];
+  const monthlyTotal = config?.monthly_total_usd ?? 0;
+  const oneTimeTotal = config?.one_time_total_usd ?? 0;
 
   return (
     <Card>
@@ -62,53 +241,51 @@ function CostConfigPanel({ config }: { config: PlatformCostConfig | null }) {
             <Settings className="w-4 h-4 text-stone-500" />
             <CardTitle className="text-base">Platform Cost Configuration</CardTitle>
           </div>
-          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setOpen(!open)}>
-            {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-          </Button>
-        </div>
-        {config && !open && (
-          <p className="text-sm text-stone-400 font-mono">
-            {formatUSD(config.monthly_amount_usd)}/month — {config.description}
-          </p>
-        )}
-      </CardHeader>
-      {open && (
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <label className="block text-[10px] font-mono uppercase tracking-wider text-stone-500">
-                Monthly Amount (USD)
-              </label>
-              <div className="relative">
-                <DollarSign className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-500" />
-                <Input
-                  type="number" min="0" step="0.01"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  className="h-9 pl-8 text-sm"
-                  placeholder="0.00"
-                />
-              </div>
-            </div>
-            <div className="space-y-1">
-              <label className="block text-[10px] font-mono uppercase tracking-wider text-stone-500">Description</label>
-              <Input
-                value={desc}
-                onChange={(e) => setDesc(e.target.value)}
-                className="h-9 text-sm"
-              />
-            </div>
-          </div>
-          <div className="flex justify-end">
-            <Button
-              size="sm"
-              onClick={() => mutate()}
-              disabled={isPending || !amount || parseFloat(amount) <= 0}
-              className="h-8 text-xs bg-violet-600 hover:bg-violet-500 text-white border-0"
-            >
-              {isPending ? "Saving…" : config ? "Update Config" : "Save Config"}
+          <div className="flex items-center gap-2">
+            {config && !open && (
+              <span className="text-xs font-mono text-stone-400">
+                {formatUSD(monthlyTotal)}/mo
+                {oneTimeTotal > 0 && ` + ${formatUSD(oneTimeTotal)} one-time`}
+              </span>
+            )}
+            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setOpen(!open)}>
+              {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             </Button>
           </div>
+        </div>
+      </CardHeader>
+      {open && (
+        <CardContent className="space-y-0">
+          {items.length === 0 ? (
+            <p className="text-xs text-stone-600 font-body py-2">No cost items configured yet.</p>
+          ) : (
+            items.map((item) => <LineItemRow key={item.id} item={item} />)
+          )}
+          {items.length > 0 && (
+            <div className="flex justify-between items-center pt-3 text-xs font-mono text-stone-500">
+              <span>Recurring / month</span>
+              <span className="text-stone-300 font-semibold">{formatUSD(monthlyTotal)}</span>
+            </div>
+          )}
+          {oneTimeTotal > 0 && (
+            <div className="flex justify-between items-center pt-1 text-xs font-mono text-stone-500">
+              <span>One-time (pending)</span>
+              <span className="text-amber-400 font-semibold">{formatUSD(oneTimeTotal)}</span>
+            </div>
+          )}
+          {addingItem ? (
+            <AddLineItemForm onDone={() => setAddingItem(false)} />
+          ) : (
+            <div className="pt-3 border-t border-stone-800/60 mt-3">
+              <Button
+                variant="ghost" size="sm"
+                onClick={() => setAddingItem(true)}
+                className="h-7 text-xs text-stone-400 hover:text-stone-200 gap-1 px-0"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add line item
+              </Button>
+            </div>
+          )}
         </CardContent>
       )}
     </Card>

@@ -17,15 +17,26 @@ InvoiceStatus = Literal[
     "partial",        # Payment arrangement active
 ]
 
+CostLineType = Literal["monthly", "one_time"]
+
+
+class CostLineItem(BaseModel):
+    """Embedded sub-document inside PlatformCostDocument.line_items."""
+    id: str                         # uuid4 string
+    description: str
+    amount_usd: float
+    type: CostLineType = "monthly"  # monthly = recurring; one_time = included once then deactivated
+    is_active: bool = True
+    used_in_invoice_id: str | None = None  # set when a one_time item is billed
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
 
 class PlatformCostDocument(BaseModel):
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 
     id: PyObjectId | None = Field(default=None, alias="_id")
-    monthly_amount_usd: float
-    description: str = "Monthly platform operating costs"
-    is_active: bool = True
-    reminder_days: list[int] = [14, 7, 1]  # days before month end to send reminders
+    line_items: list[CostLineItem] = Field(default_factory=list)
+    reminder_days: list[int] = Field(default_factory=lambda: [14, 7, 1])
     created_by: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
