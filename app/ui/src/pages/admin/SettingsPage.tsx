@@ -203,7 +203,12 @@ export function SettingsPage() {
 
   const triggerPool = useMutation({
     mutationFn: () => syncJobsApi.trigger("pool_all", { dispatch: poolDispatch }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["sync-jobs-pool"] }),
+    onSuccess: (job) => {
+      queryClient.setQueryData<{ items: SyncJob[]; total: number }>(["sync-jobs-pool"], (old) => {
+        if (!old) return { items: [job], total: 1 };
+        return { ...old, items: [job, ...old.items].slice(0, 5) };
+      });
+    },
   });
 
   const { data: enrichJobs, refetch: refetchEnrichJobs } = useQuery({
@@ -220,7 +225,12 @@ export function SettingsPage() {
       batch_size: enrichBatchSize,
       only_missing_artist: enrichMissingOnly,
     }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["sync-jobs-enrich"] }),
+    onSuccess: (job) => {
+      queryClient.setQueryData<{ items: SyncJob[]; total: number }>(["sync-jobs-enrich"], (old) => {
+        if (!old) return { items: [job], total: 1 };
+        return { ...old, items: [job, ...old.items].slice(0, 5) };
+      });
+    },
   });
 
   // When the most-recent pool job flips to complete, bust the backend cache and refetch analytics

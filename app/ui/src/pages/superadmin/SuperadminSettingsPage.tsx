@@ -34,26 +34,37 @@ function AccountingToggle({ user }: { user: User }) {
     return { prev };
   }
 
+  function commitUser(updated: User) {
+    qc.setQueryData<AdminsQueryData>(["superadmin-admins"], (old) => {
+      if (!old) return old;
+      return { ...old, items: old.items.map((u) => (u.id === updated.id ? updated : u)) };
+    });
+  }
+
   const { mutate: grant, isPending: granting } = useMutation({
     mutationFn: () => usersApi.grantPermission(user.id, "accounting"),
     onMutate: () => optimisticSet(true),
-    onSuccess: () => toast({ title: `Accounting access granted to ${user.username}`, variant: "success" }),
+    onSuccess: (updated) => {
+      commitUser(updated);
+      toast({ title: `Accounting access granted to ${user.username}`, variant: "success" });
+    },
     onError: (err: any, _: void, ctx: any) => {
       if (ctx?.prev) qc.setQueryData(["superadmin-admins"], ctx.prev);
       toast({ title: err?.response?.data?.detail ?? "Failed to grant permission", variant: "destructive" });
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: ["superadmin-admins"] }),
   });
 
   const { mutate: revoke, isPending: revoking } = useMutation({
     mutationFn: () => usersApi.revokePermission(user.id, "accounting"),
     onMutate: () => optimisticSet(false),
-    onSuccess: () => toast({ title: `Accounting access revoked from ${user.username}`, variant: "success" }),
+    onSuccess: (updated) => {
+      commitUser(updated);
+      toast({ title: `Accounting access revoked from ${user.username}`, variant: "success" });
+    },
     onError: (err: any, _: void, ctx: any) => {
       if (ctx?.prev) qc.setQueryData(["superadmin-admins"], ctx.prev);
       toast({ title: err?.response?.data?.detail ?? "Failed to revoke permission", variant: "destructive" });
     },
-    onSettled: () => qc.invalidateQueries({ queryKey: ["superadmin-admins"] }),
   });
 
   const isPending = granting || revoking;

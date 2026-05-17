@@ -460,14 +460,11 @@ export function DuplicatesPage() {
 
   const scanMut = useMutation({
     mutationFn: duplicatesApi.scan,
-    onSuccess: () => {
-      refetchScanJobs();
-      // Refresh results after scan likely completes
-      setTimeout(() => {
-        qc.invalidateQueries({ queryKey: ["duplicates"] });
-        qc.invalidateQueries({ queryKey: ["duplicate-metrics"] });
-        refetchScanJobs();
-      }, 5000);
+    onSuccess: (job) => {
+      qc.setQueryData<{ items: SyncJob[]; total: number }>(["scan-jobs-dedup"], (old) => {
+        if (!old) return { items: [job], total: 1 };
+        return { ...old, items: [job, ...old.items].slice(0, 2) };
+      });
     },
   });
 
