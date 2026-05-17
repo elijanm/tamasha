@@ -23,7 +23,7 @@ class StorageService:
         )
 
     def _run_sync(self, fn, *args, **kwargs):
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return loop.run_in_executor(None, partial(fn, *args, **kwargs))
 
     async def generate_presigned_upload_url(

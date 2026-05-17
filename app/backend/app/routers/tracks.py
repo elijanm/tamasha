@@ -513,7 +513,7 @@ async def stream_audio(
 
     # ── Head request to get file size ──────────────────────────────────────────
     import asyncio
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     def _head():
         return client.head_object(Bucket=settings.r2_bucket, Key=key)
@@ -555,7 +555,7 @@ async def stream_audio(
     headers = {
         "Content-Type": mime,
         "Content-Length": str(chunk_size),
-        "Accept-Ranges": "accepts",
+        "Accept-Ranges": "bytes",
         "Content-Range": f"bytes {start}-{end}/{file_size}",
         "Cache-Control": "no-cache",
     }
