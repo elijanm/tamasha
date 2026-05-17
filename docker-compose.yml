@@ -1,0 +1,137 @@
+services:
+
+  # ── Infrastructure ────────────────────────────────────────────────────────────
+
+  mongodb:
+    image: mongo:7.0
+    container_name: tamasha_mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: tamasha
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: tamasha_redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ── Application ───────────────────────────────────────────────────────────────
+
+  backend:
+    build:
+      context: ./app/backend
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: tamasha_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file: ./app/backend/.env
+    environment:
+      MONGO_URL: mongodb://mongodb:27017
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  backend-dev:
+    build:
+      context: ./app/backend
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: tamasha_backend_dev
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file: ./app/backend/.env
+    environment:
+      MONGO_URL: mongodb://mongodb:27017
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./app/backend/app:/app/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    profiles: [dev]
+
+  worker:
+    build:
+      context: ./app/worker
+      dockerfile: Dockerfile
+    container_name: tamasha_worker
+    restart: unless-stopped
+    env_file: ./app/worker/.env
+    environment:
+      MONGO_URL: mongodb://mongodb:27017
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      RESEND_API_KEY: ${RESEND_API_KEY}
+      EMAIL_FROM: "${EMAIL_FROM}"
+      SANDBOX_EMAIL: "${SANDBOX_EMAIL}"
+      INVOICE_EMAIL: "${INVOICE_EMAIL}"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./app/worker/worker:/app/worker   # hot-reload worker code
+
+  frontend:
+    build:
+      context: ./app/ui
+      dockerfile: Dockerfile
+    container_name: tamasha_frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_TARGET: http://backend:8000
+    depends_on:
+      - backend
+    volumes:
+      - ./app/ui/src:/app/src
+      - ./app/ui/public:/app/public
+      - ./app/ui/index.html:/app/index.html
+
+volumes:
+  mongodb_data:
+  redis_data:
+
+networks:
+  default:
+    name: tamasha_net

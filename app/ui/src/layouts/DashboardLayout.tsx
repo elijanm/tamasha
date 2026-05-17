@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { PlayerBar } from "@/components/player/PlayerBar";
 import { BillingGatePage } from "@/pages/BillingGatePage";
+import { BillingBanner } from "@/components/layout/BillingBanner";
 import { useAuth } from "@/hooks/useAuth";
 import { useBillingStatus } from "@/hooks/useBillingStatus";
 import { usePlayerStore } from "@/store/player";
@@ -61,6 +62,7 @@ export function DashboardLayout({ requiredRole }: DashboardLayoutProps) {
       {/* Main content */}
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         <Topbar onMenuClick={() => setSidebarOpen(true)} />
+        <BillingBanner />
         <main className="flex-1 overflow-y-auto bg-stone-950">
           <div className={`p-5 max-w-screen-2xl mx-auto ${track ? "pb-20" : ""}`}>
             <Outlet />

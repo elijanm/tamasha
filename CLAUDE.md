@@ -12,7 +12,18 @@ Tamasha is a large-scale African music archival, streaming, analytics, metadata 
 
 # Current Codebase State
 
-Only `Uploader/` contains working code. All other apps (`app.backend/`, `app.ui-reactjs/`, `app.worker/`) and infrastructure (`infra/`) are **planned but not yet scaffolded**. When generating new code, create the appropriate directory and scaffold from scratch following the architecture below.
+All services are scaffolded and running. Directory layout:
+
+```
+tamasha/
+├── app/
+│   ├── backend/   # FastAPI API service
+│   ├── worker/    # Celery workers
+│   └── ui/        # React + Vite frontend
+├── Uploader/      # Standalone Windows uploader (Python)
+├── docker-compose.yml
+└── docs/
+```
 
 ---
 
@@ -54,13 +65,37 @@ MAX_RETRIES=3        # per-file retry attempts with exponential backoff
 UPLOAD_CACHE_DB=     # optional: override SQLite cache path (default ~/.tamasha_uploader/<bucket>_cache.db)
 ```
 
-## Docker (full stack — when infra is scaffolded)
+## Docker (full stack)
 
 ```bash
-docker compose -f infra/docker/docker-compose.yml up --build
+# First time / full rebuild
+docker compose up --build
+
+# Dev mode — backend hot-reloads from source, skip the prod backend service
+docker compose up --build --scale backend=0 backend-dev worker frontend mongodb redis
+
+# Rebuild a single service (data is preserved)
+docker compose up --build backend
+
+# Stop everything — data is preserved in named volumes
+docker compose down
+
+# ⚠ DESTRUCTIVE: stop and wipe ALL data (MongoDB + Redis volumes)
+docker compose down -v
 ```
 
-Services: backend `:8000`, frontend `:5173`, MongoDB, Redis, Nginx.
+> **Data persistence**: MongoDB data lives in the `mongodb_data` named volume. It survives
+> `--build` and plain `docker compose down`. Only `docker compose down -v` deletes it.
+> Never run `down -v` on a machine with real data.
+
+Services: backend `:8000`, frontend `:5173`, MongoDB `:27017`, Redis `:6379`.
+
+The `backend` service runs 4 uvicorn workers (production).
+The `backend-dev` profile service mounts source and runs with `--reload`.
+The `worker` service always mounts source — restart it after code changes:
+```bash
+docker compose restart worker
+```
 
 ---
 

@@ -3,16 +3,17 @@ import { billingApi } from "@/api/billing";
 import { useAuth } from "@/hooks/useAuth";
 
 export function useBillingStatus() {
-  const { isAuthenticated, role } = useAuth();
+  const { isAuthenticated } = useAuth();
 
   const { data } = useQuery({
     queryKey: ["billing", "gate-status"],
     queryFn: billingApi.getGateStatus,
     enabled: isAuthenticated,
-    staleTime: 60_000,   // re-check every 60s
-    refetchInterval: 120_000,
+    staleTime: 30_000,
+    gcTime: 0,        // discard cache on unmount — prevents stale is_gated state across logins
+    refetchInterval: 60_000,
   });
 
-  const isGated = role !== "superadmin" && (data?.is_gated ?? false);
+  const isGated = data?.is_gated ?? false;
   return { gateStatus: data ?? null, isGated, phase: data?.phase ?? "none" };
 }

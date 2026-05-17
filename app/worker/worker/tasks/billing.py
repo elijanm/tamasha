@@ -7,6 +7,7 @@ import zipfile
 from datetime import datetime, timedelta, timezone
 
 import structlog
+from bson import ObjectId
 from celery import Task
 
 from worker.celery_app import app
@@ -104,6 +105,15 @@ async def _async_generate_invoice(log) -> dict:
         array_filters=[{"elem.type": "one_time", "elem.is_active": True, "elem.used_in_invoice_id": None}],
     )
 
+    await _send_superadmin_email(db, "invoice_created", {
+        "invoice_id": invoice_id,
+        "period_label": _month_label(month, year),
+        "issued_date": now.strftime("%d %b %Y"),
+        "due_date": due_date.strftime("%d %b %Y"),
+        "amount_usd": amount,
+        "line_items": snapshot,
+    })
+
     log.info("monthly_invoice_created", invoice_id=invoice_id, amount=amount)
     return {"invoice_id": invoice_id, "month": month, "year": year}
 
@@ -199,7 +209,9 @@ async def _async_send_reminders(log) -> dict:
                 await _send_superadmin_email(db, "billing_reminder", {
                     "days_until_due": days_until_due,
                     "amount_usd": doc["amount_usd"],
+                    "paid_amount_usd": doc.get("paid_amount_usd", 0.0),
                     "period_label": _month_label(doc["period_month"], doc["period_year"]),
+                    "line_items": doc.get("line_items", []),
                 })
                 await db["invoices"].update_one(
                     {"_id": doc["_id"]},
@@ -231,6 +243,58 @@ async def _send_superadmin_email(db, email_type: str, context: dict) -> None:
             },
             queue="email",
         )
+
+
+# ── Arrangement default check ─────────────────────────────────────────────────
+
+@app.task(
+    name="worker.tasks.billing.check_arrangement_defaults",
+    bind=True, max_retries=3, default_retry_delay=300,
+)
+def check_arrangement_defaults(self: Task) -> dict:
+    """Default arrangements where the current installment due date has passed."""
+    import asyncio
+    return asyncio.get_event_loop().run_until_complete(
+        _async_check_defaults(logger.bind(task_id=self.request.id))
+    )
+
+
+async def _async_check_defaults(log) -> dict:
+    db = get_db()
+    now = _utc_now()
+    defaulted = 0
+
+    cursor = db["payment_arrangements"].find({"status": "active"})
+    async for arr in cursor:
+        n = arr.get("installments", 2)
+        paid_flags = arr.get("paid_flags") or [False] * n
+        due_dates = arr.get("due_dates", [])
+
+        current_idx = next((i for i, p in enumerate(paid_flags) if not p), None)
+        if current_idx is None:
+            continue  # all paid, should already be completed
+
+        due_dt = due_dates[current_idx] if current_idx < len(due_dates) else None
+        if due_dt is None:
+            continue
+        if due_dt.tzinfo is None:
+            due_dt = due_dt.replace(tzinfo=timezone.utc)
+
+        if now > due_dt:
+            await db["payment_arrangements"].update_one(
+                {"_id": arr["_id"]},
+                {"$set": {"status": "defaulted", "updated_at": now}},
+            )
+            # Revert partial invoice back to overdue so escalation resumes
+            await db["invoices"].update_one(
+                {"_id": ObjectId(arr["invoice_id"]), "status": "partial"},
+                {"$set": {"status": "overdue", "updated_at": now}},
+            )
+            defaulted += 1
+            log.info("arrangement_defaulted", arrangement_id=str(arr["_id"]),
+                     invoice_id=arr["invoice_id"], installment=current_idx)
+
+    return {"defaulted": defaulted}
 
 
 # ── Data export ───────────────────────────────────────────────────────────────

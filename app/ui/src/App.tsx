@@ -23,6 +23,7 @@ import { TrackEditPage } from "@/pages/staff/TrackEditPage";
 import { ArtistDashboard } from "@/pages/artist/ArtistDashboard";
 import { ListenerHome } from "@/pages/listener/ListenerHome";
 import { BillingDashboard } from "@/pages/superadmin/BillingDashboard";
+import { NotEnabledPage } from "@/pages/NotEnabledPage";
 import { Toaster } from "@/components/ui/toaster";
 import { useAuth } from "@/hooks/useAuth";
 import type { Role } from "@/types";
@@ -36,12 +37,14 @@ const queryClient = new QueryClient({
   },
 });
 
+const ENTERPRISE_ROLES: Role[] = ["staff", "artist", "listener"];
+
 const ROLE_REDIRECTS: Record<Role, string> = {
   superadmin: "/superadmin/billing",
   admin: "/admin",
-  staff: "/staff",
-  artist: "/artist",
-  listener: "/listener",
+  staff: "/not-enabled",
+  artist: "/not-enabled",
+  listener: "/not-enabled",
 };
 
 function RootRedirect() {
@@ -107,6 +110,11 @@ function AppRoutes() {
 
       <Route element={<DashboardLayout requiredRole="listener" />}>
         <Route path="/listener" element={<ListenerHome />} />
+      </Route>
+
+      {/* Enterprise-gated roles land here */}
+      <Route element={<DashboardLayout requiredRole={ENTERPRISE_ROLES} />}>
+        <Route path="/not-enabled" element={<NotEnabledPage />} />
       </Route>
 
       <Route path="/unauthorized" element={<UnauthorizedPage />} />

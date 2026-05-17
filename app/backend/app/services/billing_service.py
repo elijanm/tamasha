@@ -22,14 +22,16 @@ from app.schemas.billing import (
     PaymentArrangementResponse,
     PaymentRecordResponse,
     PlatformCostResponse,
+    RequestArrangementRequest,
 )
 
 logger = structlog.get_logger(__name__)
 
-GRACE_DAYS = 30       # days after due before deletion warning
-WARNING_DAYS = 10     # days of warning before data becomes available
+OVERDUE_WARN_DAYS = 3 # days after due before hard gating (banner-only warning window)
+GRACE_DAYS = 30       # days after hard gate before deletion warning begins
+WARNING_DAYS = 10     # days of warning before data becomes available for download
 DOWNLOAD_DAYS = 90    # days the data export URL remains valid
-DELETED_DAYS = GRACE_DAYS + WARNING_DAYS + DOWNLOAD_DAYS  # 130
+DELETED_DAYS = OVERDUE_WARN_DAYS + GRACE_DAYS + WARNING_DAYS + DOWNLOAD_DAYS  # 133
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -304,11 +306,21 @@ async def get_invoice(db: AsyncIOMotorDatabase, invoice_id: str) -> dict | None:
 
 
 async def get_active_invoice(db: AsyncIOMotorDatabase) -> dict | None:
-    """Return the most recent unpaid invoice (drives the gate)."""
-    return await db["invoices"].find_one(
-        {"status": {"$in": ["pending", "overdue", "suspended", "data_available", "partial"]}},
-        sort=[("due_date", -1)],
-    )
+    """Return the most relevant unpaid invoice (drives the gate).
+
+    Priority order: partial > overdue > suspended > data_available > pending.
+    Partial is checked first because it may have an active payment arrangement
+    that should restore services. Within the same priority, newest due_date wins.
+    """
+    STATUS_PRIORITY = ["partial", "overdue", "suspended", "data_available", "pending", "deleted"]
+    for status in STATUS_PRIORITY:
+        doc = await db["invoices"].find_one(
+            {"status": status},
+            sort=[("due_date", -1)],
+        )
+        if doc:
+            return doc
+    return None
 
 
 async def create_invoice(
@@ -453,7 +465,32 @@ async def record_payment(
             "updated_at": now,
         }},
     )
-    return await get_invoice(db, invoice_id)
+
+    updated = await get_invoice(db, invoice_id)
+
+    # Send receipt to all superadmin users
+    try:
+        from app.tasks.email import dispatch_payment_receipt_email
+        period_label = datetime(updated["period_year"], updated["period_month"], 1).strftime("%B %Y")
+        receipt_ctx = {
+            "invoice_id": invoice_id,
+            "period_label": period_label,
+            "payment_date": now.strftime("%d %b %Y"),
+            "payment_amount_usd": amount_usd,
+            "invoice_amount_usd": updated["amount_usd"],
+            "total_paid_usd": new_paid,
+            "balance_usd": round(updated["amount_usd"] - new_paid, 2),
+            "is_paid_in_full": new_status == "paid",
+            "line_items": updated.get("line_items", []),
+            "notes": notes,
+        }
+        cursor = db["users"].find({"role": "superadmin", "is_active": True})
+        async for user in cursor:
+            dispatch_payment_receipt_email(user["email"], receipt_ctx)
+    except Exception:
+        pass  # receipt email failure must never block payment recording
+
+    return updated
 
 
 async def create_arrangement(
@@ -494,6 +531,8 @@ async def create_arrangement(
         "due_dates": due_dates,
         "total_usd": total,
         "status": "active",
+        "paid_flags": [False] * installments,
+        "paid_at_list": [None] * installments,
         "created_by": created_by,
         "created_at": now,
         "updated_at": now,
@@ -505,6 +544,177 @@ async def create_arrangement(
         {"$set": {"status": "partial", "updated_at": now}},
     )
     return arr_doc
+
+
+def _to_arrangement_response(doc: dict) -> PaymentArrangementResponse:
+    n = doc["installments"]
+    return PaymentArrangementResponse(
+        id=str(doc["_id"]),
+        invoice_id=doc["invoice_id"],
+        installments=n,
+        amounts_usd=doc["amounts_usd"],
+        due_dates=doc["due_dates"],
+        total_usd=doc["total_usd"],
+        status=doc["status"],
+        paid_flags=doc.get("paid_flags") or [False] * n,
+        paid_at_list=doc.get("paid_at_list") or [None] * n,
+        created_at=doc["created_at"],
+    )
+
+
+async def get_active_arrangement_for_invoice(db: AsyncIOMotorDatabase, invoice_id: str) -> dict | None:
+    return await db["payment_arrangements"].find_one(
+        {"invoice_id": invoice_id, "status": "active"},
+        sort=[("created_at", -1)],
+    )
+
+
+async def get_arrangement_for_invoice(db: AsyncIOMotorDatabase, invoice_id: str) -> dict | None:
+    """Get the most recent arrangement (any status) for an invoice."""
+    return await db["payment_arrangements"].find_one(
+        {"invoice_id": invoice_id},
+        sort=[("created_at", -1)],
+    )
+
+
+async def request_arrangement_by_user(
+    db: AsyncIOMotorDatabase,
+    invoice_id: str,
+    installments: int,
+    due_dates: list[str],
+    requested_by: str,
+) -> dict:
+    from datetime import timedelta
+    now = _utc_now()
+    max_date = (now + timedelta(days=7)).replace(hour=23, minute=59, second=59)
+
+    if len(due_dates) != installments:
+        raise ValueError("Number of due_dates must equal installments")
+
+    parsed: list[datetime] = []
+    for d in due_dates:
+        try:
+            dt = datetime.strptime(d, "%Y-%m-%d").replace(
+                hour=23, minute=59, second=59, tzinfo=timezone.utc
+            )
+        except ValueError:
+            raise ValueError(f"Invalid date format: {d!r} — use YYYY-MM-DD")
+        if dt > max_date:
+            raise ValueError(f"Date {d} exceeds the 7-day maximum ({max_date.date()})")
+        if dt < now:
+            raise ValueError(f"Date {d} is in the past")
+        parsed.append(dt)
+
+    for i in range(1, len(parsed)):
+        if parsed[i] <= parsed[i - 1]:
+            raise ValueError("Due dates must be in ascending order")
+
+    # Block if the user has ANY uncleared defaulted arrangement on their account
+    if await _is_arrangement_blocked(db, requested_by):
+        raise ValueError("Payment arrangement requests are disabled for this account due to a previous default. Contact support.")
+
+    # Block if a defaulted arrangement already exists for this invoice
+    has_defaulted = await db["payment_arrangements"].find_one(
+        {"invoice_id": invoice_id, "status": "defaulted"}
+    )
+    if has_defaulted:
+        raise ValueError("A previous arrangement defaulted — no further arrangements are allowed for this invoice")
+
+    # Block if an active arrangement already exists
+    existing = await get_active_arrangement_for_invoice(db, invoice_id)
+    if existing:
+        raise ValueError("An active payment arrangement already exists")
+
+    invoice = await get_invoice(db, invoice_id)
+    if not invoice:
+        raise ValueError("Invoice not found")
+
+    balance = round(invoice["amount_usd"] - invoice["paid_amount_usd"], 2)
+    base = round(balance / installments, 2)
+    amounts = [base] * (installments - 1) + [round(balance - base * (installments - 1), 2)]
+
+    arr_doc = {
+        "invoice_id": invoice_id,
+        "installments": installments,
+        "amounts_usd": amounts,
+        "due_dates": parsed,
+        "total_usd": balance,
+        "status": "active",
+        "paid_flags": [False] * installments,
+        "paid_at_list": [None] * installments,
+        "requested_by": requested_by,
+        "created_by": requested_by,
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db["payment_arrangements"].insert_one(arr_doc)
+    await db["invoices"].update_one(
+        {"_id": ObjectId(invoice_id)},
+        {"$set": {"status": "partial", "updated_at": now}},
+    )
+    return arr_doc
+
+
+async def mark_installment_paid(
+    db: AsyncIOMotorDatabase,
+    arrangement_id: str,
+    installment_index: int,
+    recorded_by: str,
+) -> dict:
+    now = _utc_now()
+    arr = await db["payment_arrangements"].find_one({"_id": ObjectId(arrangement_id)})
+    if not arr:
+        raise ValueError("Arrangement not found")
+
+    n = arr["installments"]
+    paid_flags: list[bool] = list(arr.get("paid_flags") or [False] * n)
+    paid_at_list: list = list(arr.get("paid_at_list") or [None] * n)
+
+    if installment_index < 0 or installment_index >= n:
+        raise ValueError(f"Invalid installment index {installment_index}")
+    if paid_flags[installment_index]:
+        raise ValueError("Installment already marked as paid")
+
+    paid_flags[installment_index] = True
+    paid_at_list[installment_index] = now
+
+    # Record payment
+    amount = arr["amounts_usd"][installment_index]
+    await db["payment_records"].insert_one({
+        "invoice_id": arr["invoice_id"],
+        "amount_usd": amount,
+        "recorded_by": recorded_by,
+        "notes": f"Installment {installment_index + 1} of {n}",
+        "is_arrangement_installment": True,
+        "recorded_at": now,
+    })
+
+    # Update invoice paid amount
+    invoice = await get_invoice(db, arr["invoice_id"])
+    new_paid = round(invoice["paid_amount_usd"] + amount, 2)
+    all_paid = all(paid_flags)
+    new_arr_status = "completed" if all_paid else "active"
+    new_inv_status = "paid" if new_paid >= invoice["amount_usd"] else ("partial" if not all_paid else invoice["status"])
+
+    await db["payment_arrangements"].update_one(
+        {"_id": ObjectId(arrangement_id)},
+        {"$set": {"paid_flags": paid_flags, "paid_at_list": paid_at_list,
+                  "status": new_arr_status, "updated_at": now}},
+    )
+    await db["invoices"].update_one(
+        {"_id": ObjectId(arr["invoice_id"])},
+        {"$set": {"paid_amount_usd": new_paid, "status": new_inv_status,
+                  "paid_at": now if all_paid else None, "updated_at": now}},
+    )
+    return await db["payment_arrangements"].find_one({"_id": ObjectId(arrangement_id)})
+
+
+async def _default_arrangement(db: AsyncIOMotorDatabase, arrangement_id: str) -> None:
+    now = _utc_now()
+    await db["payment_arrangements"].update_one(
+        {"_id": ObjectId(arrangement_id)},
+        {"$set": {"status": "defaulted", "updated_at": now}},
+    )
 
 
 # ── Status escalation (called by daily Celery task) ───────────────────────────
@@ -528,11 +738,12 @@ async def escalate_invoice_statuses(db: AsyncIOMotorDatabase) -> int:
         current = doc["status"]
         new_status = current
 
-        if days_late >= GRACE_DAYS + WARNING_DAYS:  # 40+
+        hard_days = days_late - OVERDUE_WARN_DAYS
+        if hard_days >= GRACE_DAYS + WARNING_DAYS:  # 43+
             new_status = "data_available"
-        elif days_late >= GRACE_DAYS:               # 30+
+        elif hard_days >= GRACE_DAYS:               # 33+
             new_status = "suspended"
-        elif current == "pending":
+        elif days_late >= OVERDUE_WARN_DAYS and current == "pending":  # 3+
             new_status = "overdue"
 
         if new_status != current:
@@ -558,27 +769,107 @@ async def escalate_invoice_statuses(db: AsyncIOMotorDatabase) -> int:
 
 # ── Billing gate ───────────────────────────────────────────────────────────────
 
+async def _is_arrangement_blocked(db: AsyncIOMotorDatabase, user_id: str) -> bool:
+    """True if the user has a defaulted arrangement on any active (non-deleted, non-paid) invoice."""
+    pipeline = [
+        {"$match": {"requested_by": user_id, "status": "defaulted"}},
+        {"$addFields": {"invoice_oid": {"$toObjectId": "$invoice_id"}}},
+        {"$lookup": {
+            "from": "invoices",
+            "localField": "invoice_oid",
+            "foreignField": "_id",
+            "as": "invoice",
+        }},
+        {"$unwind": "$invoice"},
+        {"$match": {"invoice.status": {"$nin": ["deleted", "paid"]}}},
+        {"$limit": 1},
+    ]
+    results = await db["payment_arrangements"].aggregate(pipeline).to_list(1)
+    return len(results) > 0
+
+
+async def clear_arrangement_block(db: AsyncIOMotorDatabase, arrangement_id: str) -> None:
+    """Superadmin clears the block by marking all defaulted arrangements for that
+    user as 'defaulted_cleared', restoring their ability to request arrangements."""
+    arr = await db["payment_arrangements"].find_one({"_id": ObjectId(arrangement_id)})
+    if not arr or not arr.get("requested_by"):
+        raise ValueError("Arrangement not found or has no requesting user")
+    user_id = arr["requested_by"]
+    await db["payment_arrangements"].update_many(
+        {"requested_by": user_id, "status": "defaulted"},
+        {"$set": {"status": "defaulted_cleared", "updated_at": _utc_now()}},
+    )
+
+
 async def get_gate_status(
     db: AsyncIOMotorDatabase,
     data_export_url: str | None = None,
+    user_id: str | None = None,
 ) -> BillingGateStatus:
+    blocked = await _is_arrangement_blocked(db, user_id) if user_id else False
+
     invoice_doc = await get_active_invoice(db)
     if not invoice_doc:
-        return BillingGateStatus(is_gated=False, phase="none", gate_message="")
+        return BillingGateStatus(is_gated=False, phase="none", gate_message="", arrangement_blocked=blocked)
 
     inv = _to_invoice_response(invoice_doc)
     now = _utc_now()
     days_late = inv.days_overdue
+    invoice_id = str(invoice_doc["_id"])
 
-    # Not yet past due
+    # Not yet past main due date — check arrangement state
     if inv.status in ("pending", "partial") and days_late == 0:
-        return BillingGateStatus(is_gated=False, phase="none", gate_message="", current_invoice=inv)
+        arr = await get_active_arrangement_for_invoice(db, invoice_id)
+        if arr:
+            n = arr["installments"]
+            paid_flags = arr.get("paid_flags") or [False] * n
+            current_idx = next((i for i, p in enumerate(paid_flags) if not p), None)
+            if current_idx is not None:
+                due_dt = arr["due_dates"][current_idx]
+                if due_dt.tzinfo is None:
+                    due_dt = due_dt.replace(tzinfo=timezone.utc)
+                if now <= due_dt:
+                    return BillingGateStatus(
+                        is_gated=False, phase="arrangement",
+                        gate_message=f"Payment arrangement active. Installment {current_idx + 1} of {n} due {due_dt.strftime('%B %d, %Y')}.",
+                        current_invoice=inv,
+                        active_arrangement=_to_arrangement_response(arr),
+                        next_installment_amount=arr["amounts_usd"][current_idx],
+                        next_installment_due=due_dt,
+                        arrangement_blocked=blocked,
+                    )
+                # Installment date passed — default arrangement and revert invoice
+                await _default_arrangement(db, str(arr["_id"]))
+                blocked = True  # just defaulted — block immediately
+                if inv.status == "partial":
+                    await db["invoices"].update_one(
+                        {"_id": invoice_doc["_id"]},
+                        {"$set": {"status": "overdue", "updated_at": now}},
+                    )
+
+        # Check if a previous arrangement defaulted — gate immediately
+        defaulted_arr = await db["payment_arrangements"].find_one(
+            {"invoice_id": invoice_id, "status": "defaulted"}
+        )
+        if defaulted_arr:
+            arr_resp = _to_arrangement_response(defaulted_arr)
+            return BillingGateStatus(
+                is_gated=True, phase="grace",
+                gate_message="Installment missed. Services suspended. Contact support to resolve the outstanding balance.",
+                current_invoice=inv,
+                active_arrangement=arr_resp,
+                grace_days_remaining=GRACE_DAYS,
+                arrangement_blocked=True,
+            )
+
+        return BillingGateStatus(is_gated=False, phase="none", gate_message="", current_invoice=inv, arrangement_blocked=blocked)
 
     if inv.status == "deleted":
         return BillingGateStatus(
             is_gated=True, phase="deleted",
             gate_message="Services have been terminated due to non-payment.",
             current_invoice=inv,
+            arrangement_blocked=blocked,
         )
 
     if inv.status == "data_available":
@@ -594,22 +885,67 @@ async def get_gate_status(
             current_invoice=inv,
             download_days_remaining=download_remaining,
             data_export_url=data_export_url,
+            arrangement_blocked=blocked,
         )
+
+    # Check for an active arrangement — if current installment still pending, restore services
+    arr = await get_active_arrangement_for_invoice(db, invoice_id)
+    if arr:
+        n = arr["installments"]
+        paid_flags = arr.get("paid_flags") or [False] * n
+        current_idx = next((i for i, p in enumerate(paid_flags) if not p), None)
+        if current_idx is not None:
+            due_dt = arr["due_dates"][current_idx]
+            if due_dt.tzinfo is None:
+                due_dt = due_dt.replace(tzinfo=timezone.utc)
+            if now <= due_dt:
+                # Services temporarily restored
+                return BillingGateStatus(
+                    is_gated=False, phase="arrangement",
+                    gate_message=f"Payment arrangement active. Installment {current_idx + 1} of {n} due {due_dt.strftime('%B %d, %Y')}.",
+                    current_invoice=inv,
+                    active_arrangement=_to_arrangement_response(arr),
+                    next_installment_amount=arr["amounts_usd"][current_idx],
+                    next_installment_due=due_dt,
+                    arrangement_blocked=blocked,
+                )
+            else:
+                # Installment overdue — default and fall through to gate
+                await _default_arrangement(db, str(arr["_id"]))
+                blocked = True
 
     if inv.status == "suspended":
         days_until_deletion = max(0, GRACE_DAYS + WARNING_DAYS - days_late)
+        arr_doc = await get_arrangement_for_invoice(db, invoice_id)
+        arr_resp = _to_arrangement_response(arr_doc) if arr_doc else None
         return BillingGateStatus(
             is_gated=True, phase="warning",
             gate_message=f"Services are suspended. Data will be deleted in {days_until_deletion} day(s) if payment is not received.",
             current_invoice=inv,
+            active_arrangement=arr_resp,
             deletion_days_remaining=days_until_deletion,
+            arrangement_blocked=blocked,
         )
 
-    # overdue / partial — grace period
-    grace_remaining = max(0, GRACE_DAYS - days_late)
+    # Soft warning window — invoice overdue but within 3-day grace
+    if days_late <= OVERDUE_WARN_DAYS:
+        days_until_gate = OVERDUE_WARN_DAYS - days_late
+        return BillingGateStatus(
+            is_gated=False, phase="overdue",
+            gate_message=f"Invoice overdue by {days_late} day(s). Services will be suspended in {days_until_gate} day(s).",
+            current_invoice=inv,
+            arrangement_blocked=blocked,
+        )
+
+    # Hard gate — grace period before deletion warning
+    grace_remaining = max(0, GRACE_DAYS - (days_late - OVERDUE_WARN_DAYS))
+    arr_doc = await get_arrangement_for_invoice(db, invoice_id)
+    arr_resp = _to_arrangement_response(arr_doc) if arr_doc else None
     return BillingGateStatus(
         is_gated=True, phase="grace",
         gate_message=f"Invoice overdue. Services suspended. {grace_remaining} day(s) remaining in grace period.",
         current_invoice=inv,
+        active_arrangement=arr_resp,
         grace_days_remaining=grace_remaining,
+        arrangement_blocked=blocked,
     )
