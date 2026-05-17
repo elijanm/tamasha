@@ -75,6 +75,21 @@ class PaymentRecordDocument(BaseModel):
     recorded_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class PaymentProofDocument(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
+
+    id: PyObjectId | None = Field(default=None, alias="_id")
+    invoice_id: str
+    installment_index: int | None = None  # None = whole invoice
+    submitted_by: str                     # user id
+    submitted_by_name: str | None = None  # display name snapshot
+    notes: str | None = None
+    r2_key: str | None = None
+    filename: str | None = None
+    content_type: str | None = None
+    submitted_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class PaymentArrangementDocument(BaseModel):
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 

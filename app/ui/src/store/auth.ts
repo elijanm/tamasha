@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 import { authApi } from "@/api/auth";
 import { _audio } from "@/store/player";
 import { queryClient } from "@/lib/queryClient";
+import { cacheClear } from "@/lib/sessionCache";
 import type { User } from "@/types";
 
 interface AuthState {
@@ -41,6 +42,7 @@ export const useAuthStore = create<AuthState>()(
           const user = await authApi.me();
           // Flush all cached queries from the previous session before updating the user
           queryClient.clear();
+          cacheClear();
           set({ user, isLoading: false });
           const { usePlayerStore } = await import("@/store/player");
           const player = usePlayerStore.getState();
@@ -76,6 +78,7 @@ export const useAuthStore = create<AuthState>()(
           // Proceed regardless
         } finally {
           queryClient.clear();
+          cacheClear();
           set({ user: null, accessToken: null, refreshToken: null });
         }
       },

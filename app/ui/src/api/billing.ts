@@ -5,6 +5,7 @@ import type {
   Invoice,
   PagedResponse,
   PaymentArrangement,
+  PaymentProof,
   PlatformCostConfig,
 } from "@/types";
 
@@ -86,6 +87,22 @@ export const billingApi = {
 
   deleteInvoice: async (id: string): Promise<void> => {
     await api.delete(`/billing/invoices/${id}`);
+  },
+
+  sendInvoiceEmail: async (id: string): Promise<void> => {
+    await api.post(`/billing/invoices/${id}/send-email`);
+  },
+
+  submitProof: async (invoiceId: string, formData: FormData): Promise<PaymentProof> => {
+    const res = await api.post<PaymentProof>(`/billing/invoices/${invoiceId}/proof`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return res.data;
+  },
+
+  listProofs: async (invoiceId: string): Promise<PaymentProof[]> => {
+    const res = await api.get<PaymentProof[]>(`/billing/invoices/${invoiceId}/proofs`);
+    return res.data;
   },
 
   listInvoices: async (params: { skip?: number; limit?: number } = {}): Promise<PagedResponse<Invoice>> => {

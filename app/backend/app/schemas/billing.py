@@ -105,6 +105,18 @@ class AddInvoiceLineItemRequest(BaseModel):
     type: Literal["monthly", "one_time"] = "monthly"
 
 
+class PaymentProofResponse(BaseModel):
+    id: str
+    invoice_id: str
+    installment_index: int | None
+    submitted_by: str
+    submitted_by_name: str | None
+    notes: str | None
+    filename: str | None
+    file_url: str | None  # signed URL, valid for 24 h
+    submitted_at: datetime
+
+
 class RecordPaymentRequest(BaseModel):
     amount_usd: float = Field(..., gt=0)
     notes: str | None = None
@@ -134,6 +146,7 @@ class BillingGateStatus(BaseModel):
     download_days_remaining: int | None = None
     data_export_url: str | None = None
     arrangement_blocked: bool = False
+    show_accounting_banner: bool = False
 
 
 class GenerateInvoiceRequest(BaseModel):

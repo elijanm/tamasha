@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     environment: Literal["development", "staging", "production"] = "development"
     log_level: str = "INFO"
 
+    # ─── Billing ─────────────────────────────────────────────────────────────
+    billing_banner_accounting: bool = True  # show billing banner to admins with accounting permission
+
     # ─── Rate Limiting ───────────────────────────────────────────────────────
     rate_limit_per_minute: int = 60
 

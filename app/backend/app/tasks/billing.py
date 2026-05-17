@@ -34,3 +34,12 @@ def dispatch_generate_data_export(invoice_id: str) -> str:
         queue="backup",
     )
     return result.id
+
+
+def dispatch_send_invoice_email(accounting_emails: list[str], context: dict) -> str:
+    result = celery_app.send_task(
+        "worker.tasks.billing.send_invoice_email",
+        kwargs={"accounting_emails": accounting_emails, "context": context},
+        queue="email",
+    )
+    return result.id

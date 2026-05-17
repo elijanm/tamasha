@@ -11,6 +11,7 @@ from app.models.billing import (
     CostLineItem,
     InvoiceDocument,
     PaymentArrangementDocument,
+    PaymentProofDocument,
     PaymentRecordDocument,
     PlatformCostDocument,
 )
@@ -20,6 +21,7 @@ from app.schemas.billing import (
     InvoiceLineItemResponse,
     InvoiceResponse,
     PaymentArrangementResponse,
+    PaymentProofResponse,
     PaymentRecordResponse,
     PlatformCostResponse,
     RequestArrangementRequest,
@@ -51,6 +53,31 @@ def _month_label(month: int, year: int) -> str:
 
 def _doc_to_invoice(doc: dict) -> InvoiceDocument:
     return InvoiceDocument.model_validate(doc)
+
+
+def _build_invoice_email_context(doc: dict) -> dict:
+    inv = _doc_to_invoice(doc)
+    due = inv.due_date
+    if due.tzinfo is None:
+        due = due.replace(tzinfo=timezone.utc)
+    created = inv.created_at
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    return {
+        "invoice_id": str(doc["_id"]),
+        "period_label": _month_label(inv.period_month, inv.period_year),
+        "issued_date": created.strftime("%d %b %Y"),
+        "due_date": due.strftime("%d %b %Y"),
+        "amount_usd": inv.amount_usd,
+        "line_items": [
+            {
+                "description": li.get("description", ""),
+                "type": li.get("type", "monthly"),
+                "amount_usd": li.get("amount_usd", 0.0),
+            }
+            for li in (doc.get("line_items") or [])
+        ],
+    }
 
 
 def _to_invoice_response(doc: dict) -> InvoiceResponse:
@@ -949,3 +976,66 @@ async def get_gate_status(
         grace_days_remaining=grace_remaining,
         arrangement_blocked=blocked,
     )
+
+
+# ── Payment proofs ─────────────────────────────────────────────────────────────
+
+def _to_proof_response(doc: dict) -> PaymentProofResponse:
+    from app.utils.r2 import generate_presigned_url
+    file_url: str | None = None
+    if doc.get("r2_key"):
+        try:
+            file_url = generate_presigned_url(doc["r2_key"], expires=3600 * 24)
+        except Exception:
+            pass
+    return PaymentProofResponse(
+        id=str(doc["_id"]),
+        invoice_id=doc["invoice_id"],
+        installment_index=doc.get("installment_index"),
+        submitted_by=doc["submitted_by"],
+        submitted_by_name=doc.get("submitted_by_name"),
+        notes=doc.get("notes"),
+        filename=doc.get("filename"),
+        file_url=file_url,
+        submitted_at=doc["submitted_at"],
+    )
+
+
+async def submit_payment_proof(
+    db: AsyncIOMotorDatabase,
+    *,
+    invoice_id: str,
+    submitted_by: str,
+    submitted_by_name: str | None = None,
+    notes: str | None = None,
+    r2_key: str | None = None,
+    filename: str | None = None,
+    content_type: str | None = None,
+    installment_index: int | None = None,
+) -> PaymentProofResponse:
+    now = _utc_now()
+    doc = {
+        "invoice_id": invoice_id,
+        "installment_index": installment_index,
+        "submitted_by": submitted_by,
+        "submitted_by_name": submitted_by_name,
+        "notes": notes,
+        "r2_key": r2_key,
+        "filename": filename,
+        "content_type": content_type,
+        "submitted_at": now,
+    }
+    result = await db["payment_proofs"].insert_one(doc)
+    doc["_id"] = result.inserted_id
+    return _to_proof_response(doc)
+
+
+async def list_payment_proofs(
+    db: AsyncIOMotorDatabase,
+    invoice_id: str,
+) -> list[PaymentProofResponse]:
+    cursor = db["payment_proofs"].find(
+        {"invoice_id": invoice_id},
+        sort=[("submitted_at", -1)],
+    )
+    return [_to_proof_response(doc) async for doc in cursor]

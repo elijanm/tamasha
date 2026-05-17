@@ -515,6 +515,18 @@ export interface DuplicateMetrics {
 
 // ─── Billing ──────────────────────────────────────────────────────────────────
 
+export interface PaymentProof {
+  id: string;
+  invoice_id: string;
+  installment_index: number | null;
+  submitted_by: string;
+  submitted_by_name: string | null;
+  notes: string | null;
+  filename: string | null;
+  file_url: string | null;
+  submitted_at: string;
+}
+
 export type CostLineType = "monthly" | "one_time";
 
 export interface CostLineItem {
@@ -592,6 +604,7 @@ export interface BillingGateStatus {
   download_days_remaining: number | null;
   data_export_url: string | null;
   arrangement_blocked: boolean;
+  show_accounting_banner: boolean;
 }
 
 // ─── Pagination ───────────────────────────────────────────────────────────────

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+import uuid
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from app.config import get_settings
 from app.core.exceptions import ForbiddenError, NotFoundError
 from app.dependencies import get_current_active_user, get_db
 from app.models.user import UserDocument
@@ -14,13 +17,14 @@ from app.schemas.billing import (
     GenerateInvoiceRequest,
     InvoiceResponse,
     PaymentArrangementResponse,
+    PaymentProofResponse,
     PlatformCostResponse,
     RecordPaymentRequest,
     RequestArrangementRequest,
     SetReminderDaysRequest,
     UpdateLineItemRequest,
 )
-from app.services import billing_service
+from app.services import billing_service, user_service
 
 router = APIRouter(prefix="/billing", tags=["billing"])
 
@@ -51,6 +55,13 @@ async def gate_status(
     result = await billing_service.get_gate_status(db, user_id=str(actor.id))
     if actor.role == "superadmin":
         result.is_gated = False
+    settings = get_settings()
+    if (
+        settings.billing_banner_accounting
+        and actor.role == "admin"
+        and "accounting" in (actor.extra_permissions or [])
+    ):
+        result.show_accounting_banner = True
     return result
 
 
@@ -225,6 +236,88 @@ async def remove_invoice_line_item(
     except ValueError as e:
         raise NotFoundError(str(e))
     return billing_service._to_invoice_response(doc)
+
+
+@router.post("/invoices/{invoice_id}/send-email", status_code=204)
+async def send_invoice_email(
+    invoice_id: str,
+    actor: UserDocument = Depends(_require_superadmin),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+) -> None:
+    """Send the invoice to INVOICE_EMAIL + all admins with the accounting permission."""
+    doc = await billing_service.get_invoice(db, invoice_id)
+    if not doc:
+        raise NotFoundError("Invoice not found")
+    from app.tasks.billing import dispatch_send_invoice_email
+    accounting_emails = await user_service.get_accounting_admin_emails(db)
+    context = billing_service._build_invoice_email_context(doc)
+    dispatch_send_invoice_email(accounting_emails=accounting_emails, context=context)
+
+
+@router.post("/invoices/{invoice_id}/proof", response_model=PaymentProofResponse, status_code=201)
+async def submit_payment_proof(
+    invoice_id: str,
+    notes: str | None = Form(default=None),
+    installment_index: int | None = Form(default=None),
+    file: UploadFile | None = File(default=None),
+    actor: UserDocument = Depends(_require_billing_view),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+) -> PaymentProofResponse:
+    """Submit payment proof (text + optional file) for a whole invoice or a specific installment."""
+    doc = await billing_service.get_invoice(db, invoice_id)
+    if not doc:
+        raise NotFoundError("Invoice not found")
+
+    r2_key: str | None = None
+    filename: str | None = None
+    content_type: str | None = None
+
+    if file and file.filename:
+        allowed = {"image/jpeg", "image/png", "image/webp", "application/pdf"}
+        ct = file.content_type or ""
+        if ct not in allowed:
+            raise HTTPException(400, "Proof file must be a JPEG, PNG, WebP image, or PDF")
+        data = await file.read()
+        if len(data) > 10 * 1024 * 1024:
+            raise HTTPException(400, "Proof file must be under 10 MB")
+        from app.utils.r2 import get_r2_client
+        from app.config import get_settings as _gs
+        settings = _gs()
+        ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "bin"
+        r2_key = f"billing/proofs/{invoice_id}/{uuid.uuid4().hex}.{ext}"
+        get_r2_client().put_object(
+            Bucket=settings.r2_bucket,
+            Key=r2_key,
+            Body=data,
+            ContentType=ct,
+        )
+        filename = file.filename
+        content_type = ct
+
+    display_name = actor.profile.display_name if actor.profile and actor.profile.display_name else actor.username  # type: ignore[union-attr]
+    return await billing_service.submit_payment_proof(
+        db,
+        invoice_id=invoice_id,
+        submitted_by=str(actor.id),
+        submitted_by_name=display_name,
+        notes=notes,
+        r2_key=r2_key,
+        filename=filename,
+        content_type=content_type,
+        installment_index=installment_index,
+    )
+
+
+@router.get("/invoices/{invoice_id}/proofs", response_model=list[PaymentProofResponse])
+async def list_payment_proofs(
+    invoice_id: str,
+    actor: UserDocument = Depends(_require_billing_view),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+) -> list[PaymentProofResponse]:
+    doc = await billing_service.get_invoice(db, invoice_id)
+    if not doc:
+        raise NotFoundError("Invoice not found")
+    return await billing_service.list_payment_proofs(db, invoice_id)
 
 
 @router.delete("/invoices/{invoice_id}", status_code=204)

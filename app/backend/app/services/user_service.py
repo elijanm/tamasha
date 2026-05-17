@@ -295,6 +295,15 @@ async def activate_user(
     return _doc_to_model(updated)
 
 
+async def get_accounting_admin_emails(db: AsyncIOMotorDatabase) -> list[str]:
+    """Return email addresses of all active admin users who have the 'accounting' permission."""
+    cursor = db["users"].find(
+        {"role": "admin", "is_active": True, "extra_permissions": "accounting"},
+        {"email": 1},
+    )
+    return [doc["email"] async for doc in cursor]
+
+
 async def upload_avatar(
     db: AsyncIOMotorDatabase,
     user_id: str,

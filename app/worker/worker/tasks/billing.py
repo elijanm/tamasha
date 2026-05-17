@@ -10,7 +10,10 @@ import structlog
 from bson import ObjectId
 from celery import Task
 
+import resend as resend_lib
+
 from worker.celery_app import app
+from worker.config import get_settings
 from worker.db.mongo import get_db
 from worker.storage.r2 import upload_bytes
 
@@ -29,6 +32,51 @@ def _utc_now() -> datetime:
 def _month_end(year: int, month: int) -> datetime:
     last_day = calendar.monthrange(year, month)[1]
     return datetime(year, month, last_day, 23, 59, 59, tzinfo=timezone.utc)
+
+
+# ── Manual invoice email ──────────────────────────────────────────────────────
+
+@app.task(
+    name="worker.tasks.billing.send_invoice_email",
+    bind=True, max_retries=2, default_retry_delay=60,
+    autoretry_for=(Exception,), retry_backoff=True,
+)
+def send_invoice_email(self: Task, accounting_emails: list[str], context: dict) -> dict:
+    """Send invoice email to INVOICE_EMAIL recipients + accounting admin emails (combined, deduplicated)."""
+    from worker.tasks.email import _wrap, _jinja, _BILLING_SUBJECTS
+
+    settings = get_settings()
+
+    invoice_parts = (
+        [e.strip() for e in settings.invoice_email.split(",") if e.strip()]
+        if settings.invoice_email
+        else []
+    )
+    all_recipients = list(dict.fromkeys(invoice_parts + (accounting_emails or [])))
+
+    if not all_recipients:
+        logger.warning("send_invoice_email_no_recipients", invoice_id=context.get("invoice_id"))
+        return {"sent": 0}
+
+    html = _wrap(_jinja.get_template("invoice_created").render(**context))
+    subject = _BILLING_SUBJECTS["invoice_created"]
+
+    to = settings.sandbox_email if settings.sandbox_email else all_recipients[0]
+    bcc = [] if settings.sandbox_email else all_recipients[1:]
+
+    resend_lib.api_key = settings.resend_api_key
+    payload: dict = {"from": settings.email_from, "to": [to], "subject": subject, "html": html}
+    if bcc:
+        payload["bcc"] = bcc
+
+    resend_lib.Emails.send(payload)
+    logger.info(
+        "send_invoice_email_sent",
+        to=to,
+        bcc_count=len(bcc),
+        invoice_id=context.get("invoice_id"),
+    )
+    return {"sent": len(all_recipients)}
 
 
 # ── Monthly invoice auto-generation ──────────────────────────────────────────

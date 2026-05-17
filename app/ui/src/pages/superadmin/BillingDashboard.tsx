@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { cacheGet, cacheSet } from "@/lib/sessionCache";
 import {
   DollarSign, Plus, CheckCircle2, Clock, AlertTriangle,
   Trash2, Settings, Download, Calendar, CreditCard, ChevronDown, ChevronUp,
-  RotateCcw, AlertOctagon,
+  RotateCcw, AlertOctagon, Mail, Loader2, Paperclip, FileText, ExternalLink,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,7 +17,9 @@ import type { AddInvoiceLineItemRequest, AddLineItemRequest, UpdateLineItemReque
 import { billingApi } from "@/api/billing";
 import { adminApi } from "@/api/admin";
 import { toast } from "@/hooks/useToast";
-import type { CostLineItem, CostLineType, Invoice, InvoiceLineItem, PaymentArrangement, PlatformCostConfig } from "@/types";
+import type { CostLineItem, CostLineType, Invoice, InvoiceLineItem, PagedResponse, PaymentArrangement, PaymentProof, PlatformCostConfig } from "@/types";
+import { useAuth } from "@/hooks/useAuth";
+import { Textarea } from "@/components/ui/textarea";
 
 function formatUSD(n: number) {
   return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -379,6 +382,152 @@ function CreateInvoicePanel({ onClose }: { onClose: () => void }) {
 
 // ── Record payment / arrangement modal ───────────────────────────────────────
 
+// ── Payment proof panel ───────────────────────────────────────────────────────
+
+function PaymentProofPanel({
+  invoiceId,
+  installmentIndex = null,
+}: {
+  invoiceId: string;
+  installmentIndex?: number | null;
+}) {
+  const qc = useQueryClient();
+  const { hasAccounting, isSuperAdmin } = useAuth();
+  const canSubmit = hasAccounting;
+  const canView = hasAccounting || isSuperAdmin;
+
+  const [open, setOpen] = useState(false);
+  const [notes, setNotes] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const { data: proofs = [] } = useQuery<PaymentProof[]>({
+    queryKey: ["billing", "proofs", invoiceId],
+    queryFn: () => billingApi.listProofs(invoiceId),
+    staleTime: 60_000,
+  });
+
+  const filtered = proofs.filter((p) => p.installment_index === installmentIndex);
+
+  const { mutate: submit, isPending: submitting } = useMutation({
+    mutationFn: () => {
+      const fd = new FormData();
+      if (notes.trim()) fd.append("notes", notes.trim());
+      if (installmentIndex !== null) fd.append("installment_index", String(installmentIndex));
+      if (file) fd.append("file", file);
+      return billingApi.submitProof(invoiceId, fd);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["billing", "proofs", invoiceId] });
+      toast({ title: "Proof submitted", variant: "success" });
+      setNotes(""); setFile(null); setOpen(false);
+    },
+    onError: () => toast({ title: "Failed to submit proof", variant: "destructive" }),
+  });
+
+  const label = installmentIndex !== null
+    ? `Installment ${installmentIndex + 1} Proof`
+    : "Invoice Proof";
+
+  if (!canView) return null;
+
+  return (
+    <div className="mt-2">
+      {/* Existing proofs */}
+      {filtered.length > 0 ? (
+        <div className="mb-2 space-y-1.5">
+          {filtered.map((p) => (
+            <div key={p.id} className="flex items-start gap-2 px-3 py-2 rounded-lg bg-stone-800/40 border border-stone-700/40">
+              <FileText className="w-3.5 h-3.5 text-stone-500 flex-shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                {p.notes && (
+                  <p className="text-xs text-stone-300 leading-snug">{p.notes}</p>
+                )}
+                <p className="text-[10px] font-mono text-stone-600 mt-0.5">
+                  {p.submitted_by_name ?? p.submitted_by} · {new Date(p.submitted_at).toLocaleDateString()}
+                </p>
+              </div>
+              {p.file_url && p.filename && (
+                <a
+                  href={p.file_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-[10px] font-mono text-violet-400 hover:text-violet-300 flex-shrink-0"
+                  title={p.filename}
+                >
+                  <Paperclip className="w-3 h-3" />
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : isSuperAdmin && !canSubmit ? (
+        <p className="text-[10px] font-mono text-stone-600 mb-2">No payment proof submitted yet.</p>
+      ) : null}
+
+      {/* Add proof toggle */}
+      {canSubmit && !open && (
+        <button
+          onClick={() => setOpen(true)}
+          className="flex items-center gap-1.5 text-[10px] font-mono text-stone-500 hover:text-violet-400 transition-colors"
+        >
+          <Plus className="w-3 h-3" />
+          Add {label}
+        </button>
+      )}
+
+      {/* Inline form */}
+      {open && (
+        <div className="border border-stone-700/60 rounded-lg bg-stone-800/30 p-3 space-y-2.5">
+          <p className="text-[10px] font-mono uppercase tracking-wider text-stone-500">{label}</p>
+          <Textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Transaction reference, payment method, notes…"
+            className="h-20 text-xs resize-none"
+          />
+          <div>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*,.pdf"
+              className="hidden"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            />
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="flex items-center gap-1.5 text-[10px] font-mono text-stone-500 hover:text-stone-300 transition-colors"
+            >
+              <Paperclip className="w-3 h-3" />
+              {file ? file.name : "Attach file (image or PDF, max 10 MB)"}
+            </button>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="ghost" size="sm"
+              onClick={() => { setOpen(false); setNotes(""); setFile(null); }}
+              className="h-7 text-xs text-stone-500"
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => submit()}
+              disabled={submitting || (!notes.trim() && !file)}
+              className="h-7 text-xs bg-violet-600 hover:bg-violet-500 text-white border-0"
+            >
+              {submitting ? "Submitting…" : "Submit Proof"}
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 function InvoiceActions({ invoice, onDone }: { invoice: Invoice; onDone: () => void }) {
   const qc = useQueryClient();
   const [tab, setTab] = useState<"pay" | "arrangement">("pay");
@@ -625,6 +774,12 @@ function InvoiceBreakdown({ invoice, onCollapse }: { invoice: Invoice; onCollaps
 
       {/* Arrangement management */}
       <ArrangementPanel invoiceId={invoice.id} />
+
+      {/* Whole-invoice payment proof */}
+      <div className="bg-stone-900/60 rounded-lg px-3 py-2.5">
+        <p className="text-[10px] font-mono uppercase tracking-wider text-stone-600 mb-1">Payment Proof</p>
+        <PaymentProofPanel invoiceId={invoice.id} installmentIndex={null} />
+      </div>
     </div>
   );
 }
@@ -681,7 +836,8 @@ function ArrangementPanel({ invoiceId }: { invoiceId: string }) {
         const paidAt = arr.paid_at_list[i];
         const isOverdue = !paid && new Date(arr.due_dates[i]) < new Date();
         return (
-          <div key={i} className="flex items-center gap-3 px-3 py-2.5 border-t border-stone-800/40">
+          <div key={i} className="border-t border-stone-800/40 px-3 py-2.5 space-y-1.5">
+            <div className="flex items-center gap-3">
             {paid
               ? <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
               : isOverdue
@@ -708,6 +864,9 @@ function ArrangementPanel({ invoiceId }: { invoiceId: string }) {
                 {paying && payingIdx === i ? "…" : "Mark Paid"}
               </Button>
             )}
+            </div>
+            {/* Per-installment payment proof */}
+            <PaymentProofPanel invoiceId={invoiceId} installmentIndex={i} />
           </div>
         );
       })}
@@ -756,6 +915,12 @@ function InvoiceRow({ invoice }: { invoice: Invoice }) {
     onError: () => toast({ title: "Failed to delete invoice", variant: "destructive" }),
   });
 
+  const { mutate: sendEmail, isPending: sending } = useMutation({
+    mutationFn: () => billingApi.sendInvoiceEmail(invoice.id),
+    onSuccess: () => toast({ title: "Invoice email queued", description: "Sent to INVOICE_EMAIL + accounting admins", variant: "success" }),
+    onError: () => toast({ title: "Failed to send invoice email", variant: "destructive" }),
+  });
+
   return (
     <div className="border border-stone-800/60 rounded-xl bg-stone-900/40 overflow-hidden">
       <div className="flex items-center gap-4 px-5 py-4">
@@ -797,6 +962,18 @@ function InvoiceRow({ invoice }: { invoice: Invoice }) {
         </div>
 
         <div className="flex items-center gap-1 flex-shrink-0">
+          <Button
+            size="sm" variant="ghost"
+            onClick={() => sendEmail()}
+            disabled={sending}
+            className="h-7 w-7 p-0 text-stone-600 hover:text-violet-400"
+            title="Send invoice email"
+          >
+            {sending
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : <Mail className="w-3.5 h-3.5" />
+            }
+          </Button>
           <Button
             size="sm" variant="ghost"
             onClick={() => {
@@ -980,12 +1157,24 @@ export function BillingDashboard() {
   const { data: configData, isLoading: configLoading } = useQuery({
     queryKey: ["billing", "config"],
     queryFn: billingApi.getConfig,
+    placeholderData: () => cacheGet<PlatformCostConfig | null>("billing-config"),
+    staleTime: 2 * 60 * 1000,
   });
 
   const { data: invoicesData, isLoading: invLoading } = useQuery({
     queryKey: ["billing", "invoices"],
     queryFn: () => billingApi.listInvoices({ limit: 50 }),
+    placeholderData: () => cacheGet<PagedResponse<Invoice>>("billing-invoices"),
+    staleTime: 2 * 60 * 1000,
   });
+
+  useEffect(() => {
+    if (configData !== undefined) cacheSet("billing-config", configData);
+  }, [configData]);
+
+  useEffect(() => {
+    if (invoicesData) cacheSet("billing-invoices", invoicesData);
+  }, [invoicesData]);
 
   const invoices: Invoice[] = invoicesData?.items ?? [];
 

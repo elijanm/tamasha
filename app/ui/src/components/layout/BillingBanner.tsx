@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { X, Clock, AlertTriangle, CreditCard, Receipt } from "lucide-react";
+import { X, AlertTriangle, CreditCard, Receipt } from "lucide-react";
 import { useBillingStatus } from "@/hooks/useBillingStatus";
+import { useAuth } from "@/hooks/useAuth";
 
 function formatUSD(n: number) {
   return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -12,8 +13,11 @@ function daysUntil(iso: string): number {
 
 export function BillingBanner() {
   const { gateStatus } = useBillingStatus();
+  const { isSuperAdmin } = useAuth();
   const [dismissed, setDismissed] = useState(false);
 
+  // Only superadmin and accounting admins (when enabled via BILLING_BANNER_ACCOUNTING) see the banner
+  if (!isSuperAdmin && !gateStatus?.show_accounting_banner) return null;
   if (dismissed || !gateStatus) return null;
 
   const { phase, current_invoice: inv, active_arrangement: arr, next_installment_due, next_installment_amount } = gateStatus;
