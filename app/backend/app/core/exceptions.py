@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import structlog
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+
+logger = structlog.get_logger(__name__)
 
 
 class TamashaError(Exception):
@@ -115,4 +118,18 @@ def register_exception_handlers(app: FastAPI) -> None:
             status_code=429,
             content={"error": exc.error_code, "detail": exc.message},
             headers={"Retry-After": str(exc.retry_after)},
+        )
+
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+        logger.error(
+            "unhandled_exception",
+            method=request.method,
+            path=request.url.path,
+            exc_type=type(exc).__name__,
+            exc=str(exc),
+        )
+        return JSONResponse(
+            status_code=500,
+            content={"error": "internal_error", "detail": "An unexpected error occurred"},
         )

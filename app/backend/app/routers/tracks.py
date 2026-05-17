@@ -501,6 +501,7 @@ async def stream_audio(
         raise HTTPException(status_code=404, detail="No audio file for track")
 
     from app.config import get_settings
+    from botocore.exceptions import ClientError
     settings = get_settings()
     client = get_r2_client()
 
@@ -518,7 +519,14 @@ async def stream_audio(
     def _head():
         return client.head_object(Bucket=settings.r2_bucket, Key=key)
 
-    head = await loop.run_in_executor(None, _head)
+    try:
+        head = await loop.run_in_executor(None, _head)
+    except ClientError as exc:
+        code = exc.response.get("Error", {}).get("Code", "")
+        if code in ("NoSuchKey", "404"):
+            raise HTTPException(status_code=404, detail="Audio file not found in storage")
+        raise HTTPException(status_code=502, detail=f"Storage error: {code}")
+
     file_size = head["ContentLength"]
 
     # ── Parse Range header ─────────────────────────────────────────────────────
@@ -542,7 +550,12 @@ async def stream_audio(
             Range=f"bytes={start}-{end}",
         )
 
-    obj = await loop.run_in_executor(None, _get)
+    try:
+        obj = await loop.run_in_executor(None, _get)
+    except ClientError as exc:
+        code = exc.response.get("Error", {}).get("Code", "")
+        raise HTTPException(status_code=502, detail=f"Storage fetch error: {code}")
+
     body = obj["Body"]
 
     def _iter_content():
