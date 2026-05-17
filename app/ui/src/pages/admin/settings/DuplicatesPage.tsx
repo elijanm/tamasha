@@ -176,6 +176,7 @@ function TrackRow({
 function GroupCard({ group }: { group: DuplicateGroup }) {
   const [expanded, setExpanded] = useState(false);
   const [selectedCanonical, setSelectedCanonical] = useState<string | null>(null);
+  const [merged, setMerged] = useState(false);
   const qc = useQueryClient();
 
   const { data: detail, isLoading: detailLoading } = useQuery({
@@ -188,6 +189,7 @@ function GroupCard({ group }: { group: DuplicateGroup }) {
   const resolveMut = useMutation({
     mutationFn: (canonicalId: string) => duplicatesApi.resolve(group.id, canonicalId),
     onSuccess: () => {
+      setMerged(true);
       qc.invalidateQueries({ queryKey: ["duplicates"] });
       qc.invalidateQueries({ queryKey: ["duplicate-metrics"] });
       qc.invalidateQueries({ queryKey: ["duplicate-group", group.id] });
@@ -198,11 +200,11 @@ function GroupCard({ group }: { group: DuplicateGroup }) {
   const canonicalId = selectedCanonical ?? suggestedId;
 
   function handleMerge() {
-    if (!canonicalId) return;
+    if (!canonicalId || resolveMut.isPending || merged) return;
     resolveMut.mutate(canonicalId);
   }
 
-  const isResolved = group.status === "resolved";
+  const isResolved = group.status === "resolved" || merged;
 
   return (
     <Card className={`overflow-hidden ${isResolved ? "opacity-70" : ""}`}>
