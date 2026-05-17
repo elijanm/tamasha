@@ -75,6 +75,7 @@ export const useAuthStore = create<AuthState>()(
         } catch {
           // Proceed regardless
         } finally {
+          queryClient.clear();
           set({ user: null, accessToken: null, refreshToken: null });
         }
       },

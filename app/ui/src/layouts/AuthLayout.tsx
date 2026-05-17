@@ -1,5 +1,15 @@
-import { Outlet } from "react-router-dom";
+import { Navigate, Outlet } from "react-router-dom";
 import { useTheme } from "@/context/ThemeContext";
+import { useAuth } from "@/hooks/useAuth";
+import type { Role } from "@/types";
+
+const ROLE_HOME: Record<Role, string> = {
+  superadmin: "/superadmin/billing",
+  admin: "/admin",
+  staff: "/staff",
+  artist: "/artist",
+  listener: "/listener",
+};
 
 function SimpleAuthLayout() {
   return (
@@ -174,5 +184,13 @@ function DefaultAuthLayout() {
 
 export function AuthLayout() {
   const { theme } = useTheme();
+  const { isAuthenticated, role } = useAuth();
+
+  // Already logged in — send them to their dashboard so the old session
+  // can't bleed through to someone trying to log in on the same browser.
+  if (isAuthenticated && role) {
+    return <Navigate to={ROLE_HOME[role] ?? "/"} replace />;
+  }
+
   return theme === "simple" ? <SimpleAuthLayout /> : <DefaultAuthLayout />;
 }
