@@ -35,7 +35,7 @@ const ENTERPRISE_ROLES: Role[] = ["artist", "listener"];
 const ROLE_REDIRECTS: Record<Role, string> = {
   superadmin: "/superadmin/billing",
   admin: "/admin",
-  staff: "/admin",
+  staff: "/staff",
   artist: "/not-enabled",
   listener: "/not-enabled",
 };
@@ -67,6 +67,7 @@ function AppRoutes() {
 
       <Route element={<DashboardLayout requiredRole={["admin", "staff"]} />}>
         <Route path="/admin" element={<AdminDashboard />} />
+        <Route path="/staff" element={<AdminDashboard />} />
         <Route path="/admin/users" element={<UsersPage />} />
         <Route path="/admin/audit-logs" element={<AuditLogsPage />} />
         <Route path="/admin/catalogue" element={<CataloguePage />} />
@@ -96,10 +97,9 @@ function AppRoutes() {
         <Route path="/profile" element={<ProfilePage />} />
       </Route>
 
-      {/* Staff / artist / listener land on the not-enabled page; all their sub-routes redirect here too */}
+      {/* Artist / listener land on the not-enabled page */}
       <Route element={<DashboardLayout requiredRole={ENTERPRISE_ROLES} />}>
         <Route path="/not-enabled" element={<NotEnabledPage />} />
-        <Route path="/staff/*" element={<Navigate to="/not-enabled" replace />} />
         <Route path="/artist/*" element={<Navigate to="/not-enabled" replace />} />
         <Route path="/listener/*" element={<Navigate to="/not-enabled" replace />} />
       </Route>

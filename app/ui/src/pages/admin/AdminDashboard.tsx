@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { useTheme } from "@/context/ThemeContext";
+import { useAuth } from "@/hooks/useAuth";
 import {
   Users, Music2, AlertTriangle,
   HardDrive, Play, Pause, Heart,
@@ -184,6 +185,7 @@ function NeedsReviewPanel() {
 
 export function AdminDashboard() {
   const { theme } = useTheme();
+  const { role } = useAuth();
   const isSimple = theme === "simple";
   const [showReviewPanel, setShowReviewPanel] = useState(false);
 
@@ -223,7 +225,9 @@ export function AdminDashboard() {
   return (
     <div className="space-y-5 animate-fadeIn">
       <div>
-        <h1 className="font-display text-2xl font-bold text-stone-100">Admin Dashboard</h1>
+        <h1 className="font-display text-2xl font-bold text-stone-100">
+          {role === "staff" ? "Staff Dashboard" : "Admin Dashboard"}
+        </h1>
         <p className="mt-1 text-sm font-body text-stone-500">
           Platform overview, archive metrics, and system health
         </p>
