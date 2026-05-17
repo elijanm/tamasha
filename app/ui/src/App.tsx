@@ -17,6 +17,7 @@ import { SettingsPage } from "@/pages/admin/SettingsPage";
 import { MediaMonitoringPage } from "@/pages/admin/MediaMonitoringPage";
 import { ThemesPage } from "@/pages/admin/settings/ThemesPage";
 import { DuplicatesPage } from "@/pages/admin/settings/DuplicatesPage";
+import { BillingPage } from "@/pages/admin/settings/BillingPage";
 import { StaffDashboard } from "@/pages/staff/StaffDashboard";
 import { TrackQueuePage } from "@/pages/staff/TrackQueuePage";
 import { TrackEditPage } from "@/pages/staff/TrackEditPage";
@@ -87,6 +88,7 @@ function AppRoutes() {
           <Route path="audit-log" element={<AuditLogsPage />} />
           <Route path="themes" element={<ThemesPage />} />
           <Route path="duplicates" element={<DuplicatesPage />} />
+          <Route path="billing" element={<BillingPage />} />
         </Route>
         <Route path="/admin/media-monitoring" element={<MediaMonitoringPage />} />
       </Route>

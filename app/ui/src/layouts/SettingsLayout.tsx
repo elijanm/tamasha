@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { Settings2, Users, ScrollText, Palette, Copy } from "lucide-react";
+import { Settings2, Users, ScrollText, Palette, Copy, Receipt } from "lucide-react";
 
 const TABS = [
   { label: "General",    to: "/admin/settings",               icon: Settings2,  end: true  },
@@ -7,6 +7,7 @@ const TABS = [
   { label: "Audit Log",  to: "/admin/settings/audit-log",     icon: ScrollText, end: false },
   { label: "Themes",     to: "/admin/settings/themes",        icon: Palette,    end: false },
   { label: "Duplicates", to: "/admin/settings/duplicates",    icon: Copy,       end: false },
+  { label: "Billing",    to: "/admin/settings/billing",       icon: Receipt,    end: false },
 ];
 
 export function SettingsLayout() {
