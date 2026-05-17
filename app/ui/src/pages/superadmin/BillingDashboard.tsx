@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   DollarSign, Plus, CheckCircle2, Clock, AlertTriangle,
   Trash2, Settings, Download, Calendar, CreditCard, ChevronDown, ChevronUp,
+  RotateCcw, AlertOctagon,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import type { AddInvoiceLineItemRequest, AddLineItemRequest, UpdateLineItemRequest } from "@/api/billing";
 import { billingApi } from "@/api/billing";
+import { adminApi } from "@/api/admin";
 import { toast } from "@/hooks/useToast";
 import type { CostLineItem, CostLineType, Invoice, InvoiceLineItem, PaymentArrangement, PlatformCostConfig } from "@/types";
 
@@ -854,6 +856,122 @@ function SummaryCards({ invoices }: { invoices: Invoice[] }) {
   );
 }
 
+// ── Reset catalogue panel ─────────────────────────────────────────────────────
+
+const RESET_COLLECTIONS = ["tracks", "artists", "uploads", "sync_jobs", "analytics_events", "audit_logs", "duplicate_groups", "media_monitoring"];
+const CONFIRM_PHRASE = "RESET";
+
+function ResetCataloguePanel() {
+  const [open, setOpen] = useState(false);
+  const [confirm, setConfirm] = useState("");
+  const [result, setResult] = useState<Record<string, number> | null>(null);
+
+  const { mutate, isPending } = useMutation({
+    mutationFn: adminApi.resetCatalogue,
+    onSuccess: (data) => {
+      setResult(data.deleted);
+      setConfirm("");
+      toast({ title: `Catalogue reset — ${data.total} records deleted`, variant: "success" });
+    },
+    onError: (err: any) => {
+      toast({ title: err?.response?.data?.detail ?? "Reset failed", variant: "destructive" });
+    },
+  });
+
+  return (
+    <Card className="border-red-900/40 bg-stone-950">
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-2">
+          <AlertOctagon className="w-4 h-4 text-red-500" />
+          <CardTitle className="text-sm font-mono text-red-400">Catalogue Reset</CardTitle>
+        </div>
+        <CardDescription className="text-xs text-stone-500">
+          Wipe all catalogue data for a fresh R2 resync. Users and billing records are preserved.
+        </CardDescription>
+      </CardHeader>
+
+      <CardContent className="space-y-3">
+        {/* Scope */}
+        <div className="rounded-lg border border-stone-800 bg-stone-900/50 p-3">
+          <p className="text-xs font-mono text-stone-500 mb-2 uppercase tracking-wider">Will be deleted</p>
+          <div className="flex flex-wrap gap-1.5">
+            {RESET_COLLECTIONS.map((c) => (
+              <span key={c} className="px-2 py-0.5 rounded text-xs font-mono bg-red-950/50 text-red-400 border border-red-900/40">
+                {c}
+              </span>
+            ))}
+          </div>
+          <p className="text-xs font-mono text-stone-600 mt-2 uppercase tracking-wider">Preserved</p>
+          <div className="flex flex-wrap gap-1.5 mt-1">
+            {["users", "invoices", "payment_records", "payment_arrangements", "platform_cost"].map((c) => (
+              <span key={c} className="px-2 py-0.5 rounded text-xs font-mono bg-emerald-950/50 text-emerald-600 border border-emerald-900/40">
+                {c}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* Result */}
+        {result && (
+          <div className="rounded-lg border border-stone-800 bg-stone-900/50 p-3 space-y-1">
+            <p className="text-xs font-mono text-stone-500 uppercase tracking-wider mb-2">Last reset</p>
+            {Object.entries(result).map(([col, count]) => (
+              <div key={col} className="flex justify-between text-xs font-mono">
+                <span className="text-stone-400">{col}</span>
+                <span className="text-stone-500">{count} deleted</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!open ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setOpen(true)}
+            className="w-full border-red-900/50 text-red-400 hover:bg-red-950/30 hover:text-red-300 text-xs gap-1.5"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            Reset Catalogue
+          </Button>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-xs text-red-400 font-mono">
+              Type <strong>{CONFIRM_PHRASE}</strong> to confirm permanent deletion:
+            </p>
+            <Input
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              placeholder={CONFIRM_PHRASE}
+              className="font-mono text-xs h-8 border-red-900/50 bg-stone-900 text-red-300 placeholder:text-stone-700"
+              autoFocus
+            />
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                disabled={confirm !== CONFIRM_PHRASE || isPending}
+                onClick={() => mutate()}
+                className="flex-1 bg-red-700 hover:bg-red-600 text-white text-xs gap-1.5"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                {isPending ? "Resetting…" : "Confirm Reset"}
+              </Button>
+              <Button
+                size="sm" variant="outline"
+                onClick={() => { setOpen(false); setConfirm(""); }}
+                className="text-xs"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export function BillingDashboard() {
@@ -912,6 +1030,12 @@ export function BillingDashboard() {
         ) : (
           invoices.map((inv) => <InvoiceRow key={inv.id} invoice={inv} />)
         )}
+      </div>
+
+      {/* Danger zone */}
+      <div className="space-y-3 pt-4 border-t border-stone-800/60">
+        <h2 className="text-sm font-mono font-semibold text-red-900/80 uppercase tracking-wider">Danger Zone</h2>
+        <ResetCataloguePanel />
       </div>
     </div>
   );

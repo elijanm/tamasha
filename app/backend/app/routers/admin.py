@@ -4,8 +4,9 @@ from fastapi import APIRouter, Depends
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from redis.asyncio import Redis
 
+from app.core.exceptions import ForbiddenError
 from app.core.rbac import require_permission
-from app.dependencies import get_db, get_redis
+from app.dependencies import get_db, get_redis, get_current_active_user
 from app.models.user import UserDocument
 from app.schemas.admin import BackupStatus, QueueHealth, StorageMetrics, SystemHealth
 from app.services import admin_service
@@ -13,6 +14,18 @@ from app.services import admin_service
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 _admin = require_permission("*")
+
+# Collections cleared by reset — billing and user data are preserved
+_RESET_COLLECTIONS = [
+    "tracks",
+    "artists",
+    "uploads",
+    "sync_jobs",
+    "analytics_events",
+    "audit_logs",
+    "duplicate_groups",
+    "media_monitoring",
+]
 
 
 @router.get("/health", response_model=SystemHealth)
@@ -46,6 +59,25 @@ async def backup_status(
     db: AsyncIOMotorDatabase = Depends(get_db),
 ) -> BackupStatus:
     return await admin_service.get_backup_status(db)
+
+
+@router.post("/reset-catalogue", status_code=200)
+async def reset_catalogue(
+    actor: UserDocument = Depends(get_current_active_user),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+) -> dict:
+    """Drop all catalogue/media collections to allow a fresh R2 resync.
+    Preserves users, billing, invoices, payment records, and arrangements."""
+    if actor.role != "superadmin":
+        raise ForbiddenError("Only superadmin can reset the catalogue")
+
+    results = {}
+    for col in _RESET_COLLECTIONS:
+        r = await db[col].delete_many({})
+        results[col] = r.deleted_count
+
+    total = sum(results.values())
+    return {"deleted": results, "total": total}
 
 
 @router.post("/reindex", status_code=202)

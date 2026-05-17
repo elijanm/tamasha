@@ -16,4 +16,9 @@ export const adminApi = {
     const res = await api.get<StorageMetrics>("/admin/storage-metrics");
     return res.data;
   },
+
+  resetCatalogue: async (): Promise<{ deleted: Record<string, number>; total: number }> => {
+    const res = await api.post<{ deleted: Record<string, number>; total: number }>("/admin/reset-catalogue");
+    return res.data;
+  },
 };

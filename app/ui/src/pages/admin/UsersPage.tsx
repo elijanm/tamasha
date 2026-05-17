@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  Shield, User as UserIcon, Disc3, Headphones,
+  Shield, User as UserIcon, Disc3, Headphones, ShieldCheck,
   UserPlus, Mail, ToggleLeft, ToggleRight, Search, X, Eye, EyeOff,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -19,15 +19,16 @@ import type { Role, User } from "@/types";
 const ROLES: Role[] = ["admin", "staff", "artist", "listener"];
 
 const ROLE_ICONS: Record<Role, React.ComponentType<{ className?: string }>> = {
-  admin: Shield, staff: Disc3, artist: UserIcon, listener: Headphones,
+  superadmin: ShieldCheck, admin: Shield, staff: Disc3, artist: UserIcon, listener: Headphones,
 };
 
 const ROLE_COLORS: Record<Role, string> = {
-  admin: "text-red-400", staff: "text-violet-400",
+  superadmin: "text-amber-400", admin: "text-red-400", staff: "text-violet-400",
   artist: "text-emerald-400", listener: "text-blue-400",
 };
 
 const ROLE_BG: Record<Role, string> = {
+  superadmin: "bg-amber-500/10 text-amber-400",
   admin: "bg-red-500/10 text-red-400",
   staff: "bg-violet-500/10 text-violet-400",
   artist: "bg-emerald-500/10 text-emerald-400",
@@ -259,10 +260,11 @@ function UserRow({ user }: { user: User }) {
 // ── Stats infographic ─────────────────────────────────────────────────────────
 
 const ROLE_STROKE: Record<Role, string> = {
-  admin: "#f87171", staff: "#a78bfa", artist: "#34d399", listener: "#60a5fa",
+  superadmin: "#fbbf24", admin: "#f87171", staff: "#a78bfa", artist: "#34d399", listener: "#60a5fa",
 };
 
 const ROLE_FILL_BG: Record<Role, string> = {
+  superadmin: "rgba(251,191,36,0.15)",
   admin: "rgba(248,113,113,0.15)",
   staff: "rgba(167,139,250,0.15)",
   artist: "rgba(52,211,153,0.15)",
