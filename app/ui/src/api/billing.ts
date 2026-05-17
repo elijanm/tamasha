@@ -24,6 +24,12 @@ export interface AddLineItemRequest {
   type: CostLineType;
 }
 
+export interface AddInvoiceLineItemRequest {
+  description: string;
+  amount_usd: number;
+  type: CostLineType;
+}
+
 export interface UpdateLineItemRequest {
   description?: string;
   amount_usd?: number;
@@ -65,6 +71,16 @@ export const billingApi = {
 
   setReminderDays: async (reminder_days: number[]): Promise<PlatformCostConfig> => {
     const res = await api.patch<PlatformCostConfig>("/billing/config/reminders", { reminder_days });
+    return res.data;
+  },
+
+  addInvoiceLineItem: async (invoiceId: string, payload: AddInvoiceLineItemRequest): Promise<Invoice> => {
+    const res = await api.post<Invoice>(`/billing/invoices/${invoiceId}/items`, payload);
+    return res.data;
+  },
+
+  removeInvoiceLineItem: async (invoiceId: string, itemId: string): Promise<Invoice> => {
+    const res = await api.delete<Invoice>(`/billing/invoices/${invoiceId}/items/${itemId}`);
     return res.data;
   },
 

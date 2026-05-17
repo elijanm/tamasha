@@ -344,6 +344,58 @@ async def create_invoice(
     return doc
 
 
+async def add_invoice_line_item(
+    db: AsyncIOMotorDatabase,
+    invoice_id: str,
+    description: str,
+    amount_usd: float,
+    item_type: str,
+) -> dict:
+    import uuid
+    now = _utc_now()
+    invoice = await get_invoice(db, invoice_id)
+    if not invoice:
+        raise ValueError("Invoice not found")
+    new_item = {
+        "id": str(uuid.uuid4()),
+        "description": description,
+        "amount_usd": amount_usd,
+        "type": item_type,
+    }
+    new_amount = round(invoice["amount_usd"] + amount_usd, 2)
+    await db["invoices"].update_one(
+        {"_id": ObjectId(invoice_id)},
+        {
+            "$push": {"line_items": new_item},
+            "$set": {"amount_usd": new_amount, "updated_at": now},
+        },
+    )
+    return await get_invoice(db, invoice_id)
+
+
+async def remove_invoice_line_item(
+    db: AsyncIOMotorDatabase,
+    invoice_id: str,
+    item_id: str,
+) -> dict:
+    now = _utc_now()
+    invoice = await get_invoice(db, invoice_id)
+    if not invoice:
+        raise ValueError("Invoice not found")
+    item = next((i for i in invoice.get("line_items", []) if i["id"] == item_id), None)
+    if not item:
+        raise ValueError("Line item not found")
+    new_amount = max(0.0, round(invoice["amount_usd"] - item["amount_usd"], 2))
+    await db["invoices"].update_one(
+        {"_id": ObjectId(invoice_id)},
+        {
+            "$pull": {"line_items": {"id": item_id}},
+            "$set": {"amount_usd": new_amount, "updated_at": now},
+        },
+    )
+    return await get_invoice(db, invoice_id)
+
+
 async def delete_invoice(db: AsyncIOMotorDatabase, invoice_id: str) -> bool:
     result = await db["invoices"].delete_one({"_id": ObjectId(invoice_id)})
     if result.deleted_count:

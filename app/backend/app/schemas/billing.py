@@ -97,6 +97,12 @@ class PaymentArrangementResponse(BaseModel):
     created_at: datetime
 
 
+class AddInvoiceLineItemRequest(BaseModel):
+    description: str = Field(..., min_length=1, max_length=200)
+    amount_usd: float = Field(..., gt=0)
+    type: Literal["monthly", "one_time"] = "monthly"
+
+
 class RecordPaymentRequest(BaseModel):
     amount_usd: float = Field(..., gt=0)
     notes: str | None = None

@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import type { AddLineItemRequest, UpdateLineItemRequest } from "@/api/billing";
+import type { AddInvoiceLineItemRequest, AddLineItemRequest, UpdateLineItemRequest } from "@/api/billing";
 import { billingApi } from "@/api/billing";
 import { toast } from "@/hooks/useToast";
 import type { CostLineItem, CostLineType, Invoice, InvoiceLineItem, PlatformCostConfig } from "@/types";
@@ -485,6 +485,146 @@ function InvoiceActions({ invoice, onDone }: { invoice: Invoice; onDone: () => v
   );
 }
 
+// ── Invoice breakdown (editable line items + payment actions) ────────────────
+
+function InvoiceBreakdown({ invoice, onCollapse }: { invoice: Invoice; onCollapse: () => void }) {
+  const qc = useQueryClient();
+  const [addingItem, setAddingItem] = useState(false);
+  const [newDesc, setNewDesc] = useState("");
+  const [newAmount, setNewAmount] = useState("");
+  const [newType, setNewType] = useState<"monthly" | "one_time">("monthly");
+
+  const { mutate: addItem, isPending: adding } = useMutation({
+    mutationFn: () => billingApi.addInvoiceLineItem(invoice.id, {
+      description: newDesc,
+      amount_usd: parseFloat(newAmount),
+      type: newType,
+    } as AddInvoiceLineItemRequest),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["billing"] });
+      toast({ title: "Line item added", variant: "success" });
+      setNewDesc(""); setNewAmount(""); setNewType("monthly"); setAddingItem(false);
+    },
+    onError: () => toast({ title: "Failed to add item", variant: "destructive" }),
+  });
+
+  const { mutate: removeItem } = useMutation({
+    mutationFn: (itemId: string) => billingApi.removeInvoiceLineItem(invoice.id, itemId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["billing"] });
+      toast({ title: "Line item removed", variant: "success" });
+    },
+    onError: () => toast({ title: "Failed to remove item", variant: "destructive" }),
+  });
+
+  const canEdit = invoice.status !== "paid" && invoice.status !== "deleted";
+
+  return (
+    <div className="px-5 pb-5 space-y-4 border-t border-stone-800/40 pt-4">
+      {/* Line items breakdown */}
+      <div className="bg-stone-900/60 rounded-lg overflow-hidden">
+        <div className="flex items-center justify-between px-3 pt-2.5 pb-1">
+          <p className="text-[10px] font-mono uppercase tracking-wider text-stone-600">
+            Invoice breakdown
+          </p>
+          {canEdit && !addingItem && (
+            <button
+              onClick={() => setAddingItem(true)}
+              className="flex items-center gap-1 text-[10px] font-mono text-stone-500 hover:text-violet-400 transition-colors"
+            >
+              <Plus className="w-3 h-3" /> Add item
+            </button>
+          )}
+        </div>
+
+        {invoice.line_items.length === 0 && !addingItem && (
+          <p className="text-xs text-stone-700 px-3 pb-2.5">No line items.</p>
+        )}
+
+        {invoice.line_items.map((li: InvoiceLineItem) => (
+          <div key={li.id} className="flex items-center gap-3 px-3 py-2 border-t border-stone-800/40 group">
+            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded flex-shrink-0 ${
+              li.type === "monthly" ? "bg-violet-500/10 text-violet-400" : "bg-amber-500/10 text-amber-400"
+            }`}>
+              {li.type === "monthly" ? "Monthly" : "One-time"}
+            </span>
+            <span className="flex-1 text-xs text-stone-300">{li.description}</span>
+            <span className="text-xs font-mono text-stone-200 flex-shrink-0">{formatUSD(li.amount_usd)}</span>
+            {canEdit && (
+              <button
+                onClick={() => removeItem(li.id)}
+                className="opacity-0 group-hover:opacity-100 text-stone-600 hover:text-red-400 transition-all flex-shrink-0"
+                title="Remove"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        ))}
+
+        {addingItem && (
+          <div className="px-3 py-2.5 border-t border-stone-700/60 space-y-2 bg-stone-800/20">
+            <div className="flex flex-wrap gap-2">
+              <Input
+                autoFocus
+                value={newDesc}
+                onChange={(e) => setNewDesc(e.target.value)}
+                className="h-8 text-xs flex-1 min-w-36"
+                placeholder="Description"
+              />
+              <div className="relative w-28 flex-shrink-0">
+                <DollarSign className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-stone-500" />
+                <Input
+                  type="number" min="0.01" step="0.01"
+                  value={newAmount}
+                  onChange={(e) => setNewAmount(e.target.value)}
+                  className="h-8 pl-6 text-xs"
+                  placeholder="0.00"
+                />
+              </div>
+              <Select value={newType} onValueChange={(v) => setNewType(v as "monthly" | "one_time")}>
+                <SelectTrigger className="h-8 text-xs w-28 flex-shrink-0"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="monthly">Monthly</SelectItem>
+                  <SelectItem value="one_time">One-time</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="ghost" size="sm"
+                onClick={() => { setAddingItem(false); setNewDesc(""); setNewAmount(""); }}
+                className="h-7 text-xs text-stone-500"
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => addItem()}
+                disabled={adding || !newDesc || !newAmount || parseFloat(newAmount) <= 0}
+                className="h-7 text-xs bg-violet-600 hover:bg-violet-500 text-white border-0"
+              >
+                {adding ? "Adding…" : "Add"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <div className="flex justify-between items-center px-3 py-2 border-t border-stone-700/60 bg-stone-800/30">
+          <span className="text-xs font-mono text-stone-400">Total</span>
+          <span className="text-sm font-mono font-semibold text-stone-100">{formatUSD(invoice.amount_usd)}</span>
+        </div>
+      </div>
+
+      {/* Payment actions */}
+      {canEdit && (
+        <InvoiceActions invoice={invoice} onDone={onCollapse} />
+      )}
+    </div>
+  );
+}
+
+
 // ── Invoice row ───────────────────────────────────────────────────────────────
 
 function InvoiceRow({ invoice }: { invoice: Invoice }) {
@@ -571,35 +711,7 @@ function InvoiceRow({ invoice }: { invoice: Invoice }) {
       </div>
 
       {expanded && (
-        <div className="px-5 pb-5 space-y-4 border-t border-stone-800/40 pt-4">
-          {/* Line items breakdown */}
-          {hasLineItems && (
-            <div className="space-y-0 bg-stone-900/60 rounded-lg overflow-hidden">
-              <p className="text-[10px] font-mono uppercase tracking-wider text-stone-600 px-3 pt-2.5 pb-1">
-                Invoice breakdown
-              </p>
-              {invoice.line_items.map((li: InvoiceLineItem) => (
-                <div key={li.id} className="flex items-center gap-3 px-3 py-2 border-t border-stone-800/40">
-                  <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded flex-shrink-0 ${
-                    li.type === "monthly" ? "bg-violet-500/10 text-violet-400" : "bg-amber-500/10 text-amber-400"
-                  }`}>
-                    {li.type === "monthly" ? "Monthly" : "One-time"}
-                  </span>
-                  <span className="flex-1 text-xs text-stone-300">{li.description}</span>
-                  <span className="text-xs font-mono text-stone-200 flex-shrink-0">{formatUSD(li.amount_usd)}</span>
-                </div>
-              ))}
-              <div className="flex justify-between items-center px-3 py-2 border-t border-stone-700/60 bg-stone-800/30">
-                <span className="text-xs font-mono text-stone-400">Total</span>
-                <span className="text-sm font-mono font-semibold text-stone-100">{formatUSD(invoice.amount_usd)}</span>
-              </div>
-            </div>
-          )}
-          {/* Payment actions */}
-          {invoice.status !== "paid" && invoice.status !== "deleted" && (
-            <InvoiceActions invoice={invoice} onDone={() => setExpanded(false)} />
-          )}
-        </div>
+        <InvoiceBreakdown invoice={invoice} onCollapse={() => setExpanded(false)} />
       )}
     </div>
   );

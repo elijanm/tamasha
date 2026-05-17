@@ -7,6 +7,7 @@ from app.core.exceptions import ForbiddenError, NotFoundError
 from app.dependencies import get_current_active_user, get_db
 from app.models.user import UserDocument
 from app.schemas.billing import (
+    AddInvoiceLineItemRequest,
     AddLineItemRequest,
     BillingGateStatus,
     CreateArrangementRequest,
@@ -179,6 +180,40 @@ async def record_payment(
         recorded_by=str(actor.id),
         notes=body.notes,
     )
+    return billing_service._to_invoice_response(doc)
+
+
+@router.post("/invoices/{invoice_id}/items", response_model=InvoiceResponse, status_code=201)
+async def add_invoice_line_item(
+    invoice_id: str,
+    body: AddInvoiceLineItemRequest,
+    actor: UserDocument = Depends(_require_superadmin),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+) -> InvoiceResponse:
+    try:
+        doc = await billing_service.add_invoice_line_item(
+            db,
+            invoice_id=invoice_id,
+            description=body.description,
+            amount_usd=body.amount_usd,
+            item_type=body.type,
+        )
+    except ValueError as e:
+        raise NotFoundError(str(e))
+    return billing_service._to_invoice_response(doc)
+
+
+@router.delete("/invoices/{invoice_id}/items/{item_id}", response_model=InvoiceResponse)
+async def remove_invoice_line_item(
+    invoice_id: str,
+    item_id: str,
+    actor: UserDocument = Depends(_require_superadmin),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+) -> InvoiceResponse:
+    try:
+        doc = await billing_service.remove_invoice_line_item(db, invoice_id, item_id)
+    except ValueError as e:
+        raise NotFoundError(str(e))
     return billing_service._to_invoice_response(doc)
 
 
