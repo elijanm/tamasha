@@ -12,9 +12,10 @@ export interface PagedResponse<T> {
 export type Role = "superadmin" | "admin" | "staff" | "artist" | "listener";
 
 export interface UserProfile {
-  full_name?: string;
+  display_name?: string;
   avatar_url?: string;
   bio?: string;
+  phone?: string;
 }
 
 export interface User {

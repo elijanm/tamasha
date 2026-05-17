@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pydantic import BaseModel, EmailStr
 
@@ -15,6 +15,7 @@ from app.schemas.user import (
     UserRoleUpdateRequest,
     UserUpdateRequest,
 )
+from app.core.exceptions import ValidationError
 from app.services import auth_service, user_service
 from app.tasks.email import dispatch_invite_email, dispatch_invite_link_email
 
@@ -85,6 +86,33 @@ async def send_invite(
         role=user.role,
         invited_by=actor.username,
     )
+
+
+@router.patch("/me", response_model=UserResponse)
+async def update_me(
+    body: UserUpdateRequest,
+    request: Request,
+    current_user: UserDocument = Depends(get_current_active_user),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+) -> UserResponse:
+    updated = await user_service.update_user(db, str(current_user.id), body, current_user, **_ctx(request))
+    return _to_response(updated)
+
+
+@router.post("/me/avatar", response_model=UserResponse)
+async def upload_my_avatar(
+    file: UploadFile = File(...),
+    current_user: UserDocument = Depends(get_current_active_user),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+) -> UserResponse:
+    allowed = {"image/jpeg", "image/png", "image/webp"}
+    if file.content_type not in allowed:
+        raise ValidationError("Avatar must be a JPEG, PNG, or WebP image")
+    data = await file.read()
+    if len(data) > 5 * 1024 * 1024:
+        raise ValidationError("Avatar file must be under 5 MB")
+    updated = await user_service.upload_avatar(db, str(current_user.id), data, file.content_type or "image/jpeg")
+    return _to_response(updated)
 
 
 @router.post("/invite-link", status_code=204)

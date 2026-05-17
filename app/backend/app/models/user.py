@@ -11,7 +11,9 @@ from app.utils.object_id import PyObjectId
 class UserProfile(BaseModel):
     display_name: str = ""
     avatar_url: str | None = None
+    avatar_r2_key: str | None = None
     bio: str | None = None
+    phone: str | None = None
 
 
 class UserDocument(BaseModel):

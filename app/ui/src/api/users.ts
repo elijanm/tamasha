@@ -1,6 +1,13 @@
 import { api } from "./client";
 import type { User, Role, PagedResponse } from "@/types";
 
+export interface UpdateProfilePayload {
+  display_name?: string;
+  bio?: string;
+  phone?: string;
+  email?: string;
+}
+
 export interface CreateUserPayload {
   email: string;
   username: string;
@@ -47,5 +54,19 @@ export const usersApi = {
 
   sendInviteLink: async (email: string, role: Role): Promise<void> => {
     await api.post("/users/invite-link", { email, role });
+  },
+
+  updateMe: async (payload: UpdateProfilePayload): Promise<User> => {
+    const res = await api.patch<User>("/users/me", payload);
+    return res.data;
+  },
+
+  uploadAvatar: async (file: File): Promise<User> => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await api.post<User>("/users/me/avatar", form, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return res.data;
   },
 };

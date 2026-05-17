@@ -3,6 +3,8 @@ from __future__ import annotations
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+import hashlib
+
 from app.core.audit import write_audit_log
 from app.core.exceptions import ConflictError, ForbiddenError, NotFoundError
 from app.core.pagination import PageParams
@@ -10,6 +12,7 @@ from app.core.security import hash_password
 from app.models.user import UserDocument
 from app.schemas.user import AdminCreateUserRequest, UserRoleUpdateRequest, UserUpdateRequest
 from app.utils.datetime_utils import utc_now
+from app.utils.r2 import generate_presigned_url, get_r2_client
 
 
 async def _get_user_doc(db: AsyncIOMotorDatabase, user_id: str) -> dict:
@@ -115,6 +118,15 @@ async def update_user(
         updates["profile.bio"] = body.bio
     if body.avatar_url is not None:
         updates["profile.avatar_url"] = body.avatar_url
+    if body.phone is not None:
+        updates["profile.phone"] = body.phone or None
+    if body.email is not None:
+        email_str = str(body.email)
+        existing = await db["users"].find_one({"email": email_str, "_id": {"$ne": doc["_id"]}})
+        if existing:
+            raise ConflictError("That email address is already in use")
+        updates["email"] = email_str
+        updates["is_verified"] = False
 
     if not updates:
         return _doc_to_model(doc)
@@ -205,4 +217,31 @@ async def activate_user(
         request_id=request_id,
     )
     updated = await db["users"].find_one({"_id": doc["_id"]})
+    return _doc_to_model(updated)
+
+
+async def upload_avatar(
+    db: AsyncIOMotorDatabase,
+    user_id: str,
+    file_bytes: bytes,
+    content_type: str,
+) -> UserDocument:
+    from app.config import get_settings
+    settings = get_settings()
+    sha = hashlib.sha256(file_bytes).hexdigest()[:12]
+    ext = "jpg" if "jpeg" in content_type or "jpg" in content_type else "png" if "png" in content_type else "webp"
+    r2_key = f"profiles/avatars/{user_id}_{sha}.{ext}"
+    get_r2_client().put_object(
+        Bucket=settings.r2_bucket,
+        Key=r2_key,
+        Body=file_bytes,
+        ContentType=content_type,
+    )
+    avatar_url = generate_presigned_url(r2_key, expires=3600 * 24 * 30)
+    now = utc_now()
+    await db["users"].update_one(
+        {"_id": ObjectId(user_id)},
+        {"$set": {"profile.avatar_r2_key": r2_key, "profile.avatar_url": avatar_url, "updated_at": now}},
+    )
+    updated = await db["users"].find_one({"_id": ObjectId(user_id)})
     return _doc_to_model(updated)

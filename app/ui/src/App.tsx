@@ -25,6 +25,7 @@ import { ArtistDashboard } from "@/pages/artist/ArtistDashboard";
 import { ListenerHome } from "@/pages/listener/ListenerHome";
 import { BillingDashboard } from "@/pages/superadmin/BillingDashboard";
 import { NotEnabledPage } from "@/pages/NotEnabledPage";
+import { ProfilePage } from "@/pages/ProfilePage";
 import { Toaster } from "@/components/ui/toaster";
 import { useAuth } from "@/hooks/useAuth";
 import type { Role } from "@/types";
@@ -112,6 +113,11 @@ function AppRoutes() {
 
       <Route element={<DashboardLayout requiredRole="listener" />}>
         <Route path="/listener" element={<ListenerHome />} />
+      </Route>
+
+      {/* Profile — all authenticated roles */}
+      <Route element={<DashboardLayout />}>
+        <Route path="/profile" element={<ProfilePage />} />
       </Route>
 
       {/* Enterprise-gated roles land here */}

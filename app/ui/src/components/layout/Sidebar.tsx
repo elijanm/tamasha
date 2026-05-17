@@ -227,10 +227,32 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
       {/* User info & Logout */}
       <div className="px-3 py-4 border-t border-stone-800/60">
         {user && (
-          <div className="px-3 py-2 mb-2">
-            <p className="text-xs font-body font-medium text-stone-300 truncate">{user.username}</p>
-            <p className="text-xs font-mono text-stone-600 truncate">{user.email}</p>
-          </div>
+          <NavLink
+            to="/profile"
+            onClick={onClose}
+            className={({ isActive }) =>
+              cn(
+                "flex items-center gap-2.5 px-3 py-2 mb-1 rounded-md transition-colors group",
+                isActive ? "bg-violet-500/15" : "hover:bg-stone-800/60"
+              )
+            }
+          >
+            <div className="w-7 h-7 rounded-full bg-stone-800 border border-stone-700 overflow-hidden flex items-center justify-center flex-shrink-0">
+              {user.profile?.avatar_url ? (
+                <img src={user.profile.avatar_url} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-xs font-mono text-stone-500 uppercase">
+                  {user.username.charAt(0)}
+                </span>
+              )}
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-body font-medium text-stone-300 truncate group-hover:text-stone-100">
+                {user.profile?.display_name || user.username}
+              </p>
+              <p className="text-xs font-mono text-stone-600 truncate">{user.email}</p>
+            </div>
+          </NavLink>
         )}
         <button
           onClick={handleLogout}

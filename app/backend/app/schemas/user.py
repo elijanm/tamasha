@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.core.pagination import PagedResponse
 from app.utils.object_id import PyObjectId
@@ -15,6 +15,7 @@ class UserProfileResponse(BaseModel):
     display_name: str = ""
     avatar_url: str | None = None
     bio: str | None = None
+    phone: str | None = None
 
 
 class UserResponse(BaseModel):
@@ -35,6 +36,8 @@ class UserUpdateRequest(BaseModel):
     display_name: str | None = Field(default=None, max_length=100)
     bio: str | None = Field(default=None, max_length=1000)
     avatar_url: str | None = None
+    phone: str | None = Field(default=None, max_length=30)
+    email: EmailStr | None = None
 
 
 class UserRoleUpdateRequest(BaseModel):
