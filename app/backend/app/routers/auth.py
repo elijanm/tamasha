@@ -93,6 +93,7 @@ async def me(current_user: UserDocument = Depends(get_current_active_user)) -> U
         email=current_user.email,
         username=current_user.username,
         role=current_user.role,
+        extra_permissions=current_user.extra_permissions,
         is_active=current_user.is_active,
         is_verified=current_user.is_verified,
         profile=current_user.profile,

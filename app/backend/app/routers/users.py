@@ -41,6 +41,7 @@ def _to_response(user: UserDocument) -> UserResponse:
         email=user.email,
         username=user.username,
         role=user.role,
+        extra_permissions=user.extra_permissions,
         is_active=user.is_active,
         is_verified=user.is_verified,
         profile=user.profile,
