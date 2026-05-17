@@ -112,4 +112,23 @@ export const billingApi = {
     const res = await api.post<PaymentArrangement>(`/billing/invoices/${invoiceId}/arrangement`, payload);
     return res.data;
   },
+
+  getArrangement: async (invoiceId: string): Promise<PaymentArrangement | null> => {
+    const res = await api.get<PaymentArrangement | null>(`/billing/invoices/${invoiceId}/arrangement`);
+    return res.data;
+  },
+
+  requestArrangement: async (invoiceId: string, installments: number, due_dates: string[]): Promise<PaymentArrangement> => {
+    const res = await api.post<PaymentArrangement>(`/billing/invoices/${invoiceId}/arrangement/request`, { installments, due_dates });
+    return res.data;
+  },
+
+  markInstallmentPaid: async (arrangementId: string, index: number): Promise<PaymentArrangement> => {
+    const res = await api.post<PaymentArrangement>(`/billing/arrangements/${arrangementId}/installments/${index}/pay`, {});
+    return res.data;
+  },
+
+  clearArrangementBlock: async (arrangementId: string): Promise<void> => {
+    await api.post(`/billing/arrangements/${arrangementId}/clear-block`);
+  },
 };

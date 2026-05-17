@@ -52,8 +52,11 @@ export const useAuthStore = create<AuthState>()(
             player.setOwnerId(user.id);
           }
         } catch (err: unknown) {
+          const axiosErr = err as { response?: { data?: { detail?: string; error?: string } } };
           const message =
-            err instanceof Error ? err.message : "Login failed";
+            axiosErr?.response?.data?.detail ??
+            axiosErr?.response?.data?.error ??
+            (err instanceof Error ? err.message : "Login failed");
           set({ error: message, isLoading: false });
           throw err;
         }

@@ -14,7 +14,7 @@ import {
 import type { AddInvoiceLineItemRequest, AddLineItemRequest, UpdateLineItemRequest } from "@/api/billing";
 import { billingApi } from "@/api/billing";
 import { toast } from "@/hooks/useToast";
-import type { CostLineItem, CostLineType, Invoice, InvoiceLineItem, PlatformCostConfig } from "@/types";
+import type { CostLineItem, CostLineType, Invoice, InvoiceLineItem, PaymentArrangement, PlatformCostConfig } from "@/types";
 
 function formatUSD(n: number) {
   return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -619,6 +619,116 @@ function InvoiceBreakdown({ invoice, onCollapse }: { invoice: Invoice; onCollaps
       {/* Payment actions */}
       {canEdit && (
         <InvoiceActions invoice={invoice} onDone={onCollapse} />
+      )}
+
+      {/* Arrangement management */}
+      <ArrangementPanel invoiceId={invoice.id} />
+    </div>
+  );
+}
+
+
+// ── Arrangement panel (superadmin view) ───────────────────────────────────────
+
+function ArrangementPanel({ invoiceId }: { invoiceId: string }) {
+  const qc = useQueryClient();
+
+  const { data: arr, isLoading } = useQuery<PaymentArrangement | null>({
+    queryKey: ["billing", "arrangement", invoiceId],
+    queryFn: () => billingApi.getArrangement(invoiceId),
+  });
+
+  const { mutate: payInstallment, isPending: paying, variables: payingIdx } = useMutation({
+    mutationFn: (index: number) => billingApi.markInstallmentPaid(arr!.id, index),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["billing"] });
+      toast({ title: "Installment marked as paid", variant: "success" });
+    },
+    onError: () => toast({ title: "Failed to record installment payment", variant: "destructive" }),
+  });
+
+  const { mutate: clearBlock, isPending: clearing } = useMutation({
+    mutationFn: () => billingApi.clearArrangementBlock(arr!.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["billing"] });
+      toast({ title: "Arrangement block cleared — user can request again", variant: "success" });
+    },
+    onError: () => toast({ title: "Failed to clear block", variant: "destructive" }),
+  });
+
+  if (isLoading || !arr) return null;
+
+  const statusColor = arr.status === "active" ? "text-violet-400 bg-violet-500/10"
+    : arr.status === "completed" ? "text-emerald-400 bg-emerald-500/10"
+    : arr.status === "defaulted" ? "text-red-400 bg-red-500/10"
+    : "text-stone-400 bg-stone-500/10";
+
+  return (
+    <div className="bg-stone-900/60 rounded-lg overflow-hidden">
+      <div className="flex items-center gap-2 px-3 pt-2.5 pb-1">
+        <CreditCard className="w-3.5 h-3.5 text-stone-500" />
+        <p className="text-[10px] font-mono uppercase tracking-wider text-stone-600 flex-1">
+          Payment Arrangement
+        </p>
+        <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${statusColor}`}>
+          {arr.status}
+        </span>
+      </div>
+      {arr.amounts_usd.map((amt, i) => {
+        const paid = arr.paid_flags[i];
+        const paidAt = arr.paid_at_list[i];
+        const isOverdue = !paid && new Date(arr.due_dates[i]) < new Date();
+        return (
+          <div key={i} className="flex items-center gap-3 px-3 py-2.5 border-t border-stone-800/40">
+            {paid
+              ? <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+              : isOverdue
+              ? <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
+              : <Clock className="w-4 h-4 text-amber-400 flex-shrink-0" />
+            }
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-mono text-stone-300">
+                Installment {i + 1} of {arr.installments} — {formatUSD(amt)}
+              </p>
+              <p className="text-[10px] text-stone-600">
+                {paid && paidAt
+                  ? `Paid ${new Date(paidAt).toLocaleDateString()}`
+                  : `Due ${new Date(arr.due_dates[i]).toLocaleDateString()}${isOverdue ? " — OVERDUE" : ""}`}
+              </p>
+            </div>
+            {!paid && arr.status === "active" && (
+              <Button
+                size="sm"
+                onClick={() => payInstallment(i)}
+                disabled={paying && payingIdx === i}
+                className="h-7 text-[10px] bg-emerald-600 hover:bg-emerald-500 text-white border-0 flex-shrink-0"
+              >
+                {paying && payingIdx === i ? "…" : "Mark Paid"}
+              </Button>
+            )}
+          </div>
+        );
+      })}
+      <div className="flex justify-between px-3 py-2 border-t border-stone-700/60 bg-stone-800/20 text-[10px] font-mono text-stone-500">
+        <span>Total</span>
+        <span className="text-stone-300">{formatUSD(arr.total_usd)}</span>
+      </div>
+      {arr.status === "defaulted" && (
+        <div className="px-3 py-2.5 border-t border-red-900/40 bg-red-950/20 flex items-center gap-3">
+          <AlertTriangle className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
+          <p className="text-[10px] font-mono text-red-400 flex-1">
+            User is blocked from future arrangement requests.
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => clearBlock()}
+            disabled={clearing}
+            className="h-7 text-[10px] border-red-700/50 text-red-400 hover:bg-red-500/10 hover:border-red-500 flex-shrink-0"
+          >
+            {clearing ? "…" : "Clear Block"}
+          </Button>
+        </div>
       )}
     </div>
   );

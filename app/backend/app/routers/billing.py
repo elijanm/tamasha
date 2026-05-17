@@ -16,6 +16,7 @@ from app.schemas.billing import (
     PaymentArrangementResponse,
     PlatformCostResponse,
     RecordPaymentRequest,
+    RequestArrangementRequest,
     SetReminderDaysRequest,
     UpdateLineItemRequest,
 )
@@ -37,11 +38,11 @@ async def gate_status(
     actor: UserDocument = Depends(get_current_active_user),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ) -> BillingGateStatus:
-    """Returns the current billing gate state. Superadmin is never gated."""
-    status = await billing_service.get_gate_status(db)
+    """Returns the current billing gate state. Superadmin can see invoice state but is never gated."""
+    result = await billing_service.get_gate_status(db, user_id=str(actor.id))
     if actor.role == "superadmin":
-        status.is_gated = False
-    return status
+        result.is_gated = False
+    return result
 
 
 # ── Platform cost config (superadmin only) ────────────────────────────────────
@@ -228,6 +229,38 @@ async def delete_invoice(
         raise NotFoundError("Invoice not found")
 
 
+@router.get("/invoices/{invoice_id}/arrangement", response_model=PaymentArrangementResponse | None)
+async def get_invoice_arrangement(
+    invoice_id: str,
+    actor: UserDocument = Depends(get_current_active_user),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+) -> PaymentArrangementResponse | None:
+    doc = await billing_service.get_arrangement_for_invoice(db, invoice_id)
+    if not doc:
+        return None
+    return billing_service._to_arrangement_response(doc)
+
+
+@router.post("/invoices/{invoice_id}/arrangement/request", response_model=PaymentArrangementResponse, status_code=201)
+async def request_arrangement(
+    invoice_id: str,
+    body: RequestArrangementRequest,
+    actor: UserDocument = Depends(get_current_active_user),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+) -> PaymentArrangementResponse:
+    try:
+        arr = await billing_service.request_arrangement_by_user(
+            db,
+            invoice_id=invoice_id,
+            installments=body.installments,
+            due_dates=body.due_dates,
+            requested_by=str(actor.id),
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return billing_service._to_arrangement_response(arr)
+
+
 @router.post("/invoices/{invoice_id}/arrangement", response_model=PaymentArrangementResponse)
 async def create_arrangement(
     invoice_id: str,
@@ -241,13 +274,36 @@ async def create_arrangement(
         installments=body.installments,
         created_by=str(actor.id),
     )
-    return PaymentArrangementResponse(
-        id=str(arr["_id"]),
-        invoice_id=arr["invoice_id"],
-        installments=arr["installments"],
-        amounts_usd=arr["amounts_usd"],
-        due_dates=arr["due_dates"],
-        total_usd=arr["total_usd"],
-        status=arr["status"],
-        created_at=arr["created_at"],
-    )
+    return billing_service._to_arrangement_response(arr)
+
+
+@router.post("/arrangements/{arrangement_id}/installments/{index}/pay", response_model=PaymentArrangementResponse)
+async def mark_installment_paid(
+    arrangement_id: str,
+    index: int,
+    actor: UserDocument = Depends(_require_superadmin),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+) -> PaymentArrangementResponse:
+    try:
+        arr = await billing_service.mark_installment_paid(
+            db,
+            arrangement_id=arrangement_id,
+            installment_index=index,
+            recorded_by=str(actor.id),
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return billing_service._to_arrangement_response(arr)
+
+
+@router.post("/arrangements/{arrangement_id}/clear-block", status_code=204)
+async def clear_arrangement_block(
+    arrangement_id: str,
+    actor: UserDocument = Depends(_require_superadmin),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+) -> None:
+    """Superadmin clears the arrangement block for the user who owns this arrangement."""
+    try:
+        await billing_service.clear_arrangement_block(db, arrangement_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))

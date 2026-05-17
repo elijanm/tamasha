@@ -101,5 +101,9 @@ app.conf.update(
             "task": "worker.tasks.billing.send_billing_reminders",
             "schedule": crontab(hour=8, minute=0),   # 08:00 UTC daily
         },
+        "hourly-arrangement-defaults": {
+            "task": "worker.tasks.billing.check_arrangement_defaults",
+            "schedule": 3600,   # every hour
+        },
     },
 )

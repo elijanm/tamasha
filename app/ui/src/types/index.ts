@@ -567,21 +567,27 @@ export interface PaymentArrangement {
   amounts_usd: number[];
   due_dates: string[];
   total_usd: number;
-  status: string;
+  status: "active" | "completed" | "defaulted";
+  paid_flags: boolean[];
+  paid_at_list: (string | null)[];
   created_at: string;
 }
 
-export type BillingPhase = "none" | "grace" | "warning" | "data_available" | "deleted";
+export type BillingPhase = "none" | "overdue" | "grace" | "warning" | "data_available" | "deleted" | "arrangement";
 
 export interface BillingGateStatus {
   is_gated: boolean;
   phase: BillingPhase;
   gate_message: string;
   current_invoice: Invoice | null;
+  active_arrangement: PaymentArrangement | null;
+  next_installment_amount: number | null;
+  next_installment_due: string | null;
   grace_days_remaining: number | null;
   deletion_days_remaining: number | null;
   download_days_remaining: number | null;
   data_export_url: string | null;
+  arrangement_blocked: boolean;
 }
 
 // ─── Pagination ───────────────────────────────────────────────────────────────

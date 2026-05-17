@@ -94,6 +94,8 @@ class PaymentArrangementResponse(BaseModel):
     due_dates: list[datetime]
     total_usd: float
     status: str
+    paid_flags: list[bool]
+    paid_at_list: list[datetime | None]
     created_at: datetime
 
 
@@ -113,15 +115,25 @@ class CreateArrangementRequest(BaseModel):
     notes: str | None = None
 
 
+class RequestArrangementRequest(BaseModel):
+    """User-facing: request an arrangement with explicit per-installment due dates."""
+    installments: int = Field(2, ge=2, le=3)
+    due_dates: list[str] = Field(..., min_length=2, max_length=3)  # "YYYY-MM-DD"
+
+
 class BillingGateStatus(BaseModel):
     is_gated: bool
-    phase: str              # none | grace | warning | data_available | deleted
+    phase: str              # none | grace | warning | data_available | deleted | arrangement
     gate_message: str
     current_invoice: InvoiceResponse | None = None
+    active_arrangement: PaymentArrangementResponse | None = None
+    next_installment_amount: float | None = None
+    next_installment_due: datetime | None = None
     grace_days_remaining: int | None = None
     deletion_days_remaining: int | None = None
     download_days_remaining: int | None = None
     data_export_url: str | None = None
+    arrangement_blocked: bool = False
 
 
 class GenerateInvoiceRequest(BaseModel):

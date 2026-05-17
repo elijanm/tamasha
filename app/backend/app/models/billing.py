@@ -83,8 +83,11 @@ class PaymentArrangementDocument(BaseModel):
     installments: int = 2
     amounts_usd: list[float]    # one per installment, sums to total_usd
     due_dates: list[datetime]
-    total_usd: float            # invoice balance + next-month recurring
+    total_usd: float            # invoice balance (or balance + next-month)
     status: str = "active"      # active | completed | defaulted
+    paid_flags: list[bool] = Field(default_factory=list)
+    paid_at_list: list[datetime | None] = Field(default_factory=list)
+    requested_by: str | None = None   # user who requested (vs superadmin who set up)
     created_by: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
