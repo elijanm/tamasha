@@ -1,11 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
 import {
   Database, Zap, Server, CheckCircle2, XCircle, RefreshCw,
   AlertCircle, HardDrive, Activity, Music2, Users, Play,
   AlertTriangle, Package, Layers, Settings2, BarChart2,
-  Radio, Clock, ScrollText, ChevronRight, Disc3, Eye, EyeOff,
+  Radio, Clock, Disc3, Eye, EyeOff,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -422,32 +421,6 @@ export function SettingsPage() {
             </CardContent>
           </Card>
         )}
-      </section>
-
-      {/* ── Management ─────────────────────────────────────────────────── */}
-      <section className="space-y-3">
-        <h2 className="text-xs font-mono font-semibold text-stone-600 uppercase tracking-widest">
-          Management
-        </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {[
-            { label: "Users",      desc: "Manage user accounts and roles",      icon: Users,      to: "/admin/users"      },
-            { label: "Audit Logs", desc: "Review all platform audit activity",  icon: ScrollText, to: "/admin/audit-logs" },
-          ].map(({ label, desc, icon: Icon, to }) => (
-            <Link key={to} to={to}>
-              <Card className="p-4 flex items-center gap-3 hover:border-stone-700 hover:bg-stone-900/60 transition-colors cursor-pointer">
-                <div className="w-9 h-9 rounded-lg bg-stone-800 flex items-center justify-center flex-shrink-0">
-                  <Icon className="w-4 h-4 text-stone-400" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-body font-medium text-stone-200">{label}</p>
-                  <p className="text-xs font-mono text-stone-600 truncate">{desc}</p>
-                </div>
-                <ChevronRight className="w-4 h-4 text-stone-700 flex-shrink-0" />
-              </Card>
-            </Link>
-          ))}
-        </div>
       </section>
 
       {/* ── Interface ───────────────────────────────────────────────────── */}

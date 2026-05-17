@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from typing import Any
+
+from bson import ObjectId
 from fastapi import APIRouter, Depends, Query
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
@@ -14,6 +17,26 @@ from app.utils.object_id import PyObjectId
 router = APIRouter(prefix="/audit-logs", tags=["audit-logs"])
 
 _admin = require_permission("*")
+
+
+def _stringify_objectids(value: Any) -> Any:
+    """Recursively convert bson.ObjectId values to strings so Pydantic can serialize them."""
+    if isinstance(value, ObjectId):
+        return str(value)
+    if isinstance(value, dict):
+        return {k: _stringify_objectids(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_stringify_objectids(i) for i in value]
+    return value
+
+
+def _prepare_doc(doc: dict) -> dict:
+    doc["_id"] = str(doc["_id"])
+    if doc.get("before") is not None:
+        doc["before"] = _stringify_objectids(doc["before"])
+    if doc.get("after") is not None:
+        doc["after"] = _stringify_objectids(doc["after"])
+    return doc
 
 
 @router.get("/", response_model=AuditLogListResponse)
@@ -44,8 +67,7 @@ async def list_audit_logs(
 
     items = []
     for doc in docs:
-        doc["_id"] = str(doc["_id"])
-        items.append(AuditLogResponse.model_validate(doc))
+        items.append(AuditLogResponse.model_validate(_prepare_doc(doc)))
 
     return AuditLogListResponse(items=items, total=total, skip=skip, limit=limit)
 
@@ -63,5 +85,4 @@ async def get_audit_log(
         doc = None
     if not doc:
         raise NotFoundError(f"Audit log {log_id} not found")
-    doc["_id"] = str(doc["_id"])
-    return AuditLogResponse.model_validate(doc)
+    return AuditLogResponse.model_validate(_prepare_doc(doc))

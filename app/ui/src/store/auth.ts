@@ -31,8 +31,11 @@ export const useAuthStore = create<AuthState>()(
       error: null,
 
       login: async (email, password) => {
-        // Clear previous user immediately so stale role data never leaks to components
         set({ isLoading: true, error: null, user: null, accessToken: null, refreshToken: null });
+        // Flush stale caches before any new token hits state — prevents previous user's
+        // React Query cache from being served during the brief window between token set and user fetch.
+        queryClient.clear();
+        cacheClear();
         try {
           const tokens = await authApi.login({ email, password });
           set({
@@ -40,9 +43,6 @@ export const useAuthStore = create<AuthState>()(
             refreshToken: tokens.refresh_token,
           });
           const user = await authApi.me();
-          // Flush all cached queries from the previous session before updating the user
-          queryClient.clear();
-          cacheClear();
           set({ user, isLoading: false });
           const { usePlayerStore } = await import("@/store/player");
           const player = usePlayerStore.getState();
