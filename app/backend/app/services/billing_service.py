@@ -111,7 +111,38 @@ async def _snapshot_line_items(db: AsyncIOMotorDatabase) -> list[dict]:
 # ── Platform cost config ───────────────────────────────────────────────────────
 
 async def _get_cost_doc(db: AsyncIOMotorDatabase) -> dict | None:
-    return await db["platform_cost"].find_one({}, sort=[("created_at", -1)])
+    doc = await db["platform_cost"].find_one({}, sort=[("created_at", -1)])
+    if doc:
+        await _repair_orphaned_one_time_items(db, doc)
+        doc = await db["platform_cost"].find_one({"_id": doc["_id"]})
+    return doc
+
+
+async def _repair_orphaned_one_time_items(db: AsyncIOMotorDatabase, cost_doc: dict) -> None:
+    """Clear used_in_invoice_id on one-time items whose invoice was deleted."""
+    orphaned_ids = {
+        i["used_in_invoice_id"]
+        for i in cost_doc.get("line_items", [])
+        if i.get("type") == "one_time" and i.get("used_in_invoice_id")
+    }
+    if not orphaned_ids:
+        return
+    from bson import ObjectId as _ObjId
+    existing = await db["invoices"].distinct(
+        "_id",
+        {"_id": {"$in": [_ObjId(oid) for oid in orphaned_ids if len(oid) == 24]}},
+    )
+    existing_strs = {str(oid) for oid in existing}
+    truly_orphaned = orphaned_ids - existing_strs
+    if not truly_orphaned:
+        return
+    now = _utc_now()
+    for orphan_id in truly_orphaned:
+        await db["platform_cost"].update_one(
+            {"_id": cost_doc["_id"]},
+            {"$set": {"line_items.$[elem].used_in_invoice_id": None, "updated_at": now}},
+            array_filters=[{"elem.used_in_invoice_id": orphan_id}],
+        )
 
 
 async def _ensure_cost_doc(db: AsyncIOMotorDatabase, created_by: str) -> dict:
@@ -318,6 +349,16 @@ async def delete_invoice(db: AsyncIOMotorDatabase, invoice_id: str) -> bool:
     if result.deleted_count:
         await db["payment_records"].delete_many({"invoice_id": invoice_id})
         await db["payment_arrangements"].delete_many({"invoice_id": invoice_id})
+        # Restore any one-time items that were marked as used by this invoice
+        now = _utc_now()
+        await db["platform_cost"].update_one(
+            {},
+            {"$set": {
+                "line_items.$[elem].used_in_invoice_id": None,
+                "updated_at": now,
+            }},
+            array_filters=[{"elem.used_in_invoice_id": invoice_id}],
+        )
     return result.deleted_count > 0
 
 
