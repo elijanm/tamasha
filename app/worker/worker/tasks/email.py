@@ -419,27 +419,42 @@ _jinja = Environment(loader=DictLoader(_TEMPLATES), autoescape=True)
 _INVOICE_EMAIL_TYPES = {"invoice_created", "billing_reminder", "payment_receipt"}
 
 
+def _parse_invoice_emails(raw: str) -> tuple[str, list[str]]:
+    """Return (to, bcc_list) from a comma-separated INVOICE_EMAIL value."""
+    parts = [e.strip() for e in raw.split(",") if e.strip()]
+    return parts[0], parts[1:]
+
+
 def _send_email(to_email: str, subject: str, html_body: str, *, use_invoice_email: bool = False) -> None:
     settings = get_settings()
     resend.api_key = settings.resend_api_key
 
+    to: str
+    bcc: list[str] = []
+
     if settings.sandbox_email:
-        recipient = settings.sandbox_email
-        logger.debug("email_sandbox_redirect", original_to=to_email, sandbox=recipient)
+        to = settings.sandbox_email
+        logger.debug("email_sandbox_redirect", original_to=to_email, sandbox=to)
     elif use_invoice_email and settings.invoice_email:
-        recipient = settings.invoice_email
+        to, bcc = _parse_invoice_emails(settings.invoice_email)
     else:
-        recipient = to_email
+        to = to_email
+
+    payload: dict = {
+        "from": settings.email_from,
+        "to": [to],
+        "subject": subject,
+        "html": html_body,
+    }
+    if bcc:
+        payload["bcc"] = bcc
 
     try:
-        resend.Emails.send({
-            "from": settings.email_from,
-            "to": [recipient],
-            "subject": subject,
-            "html": html_body,
-        })
+        resend.Emails.send(payload)
+        if bcc:
+            logger.debug("email_sent_with_bcc", to=to, bcc=bcc, subject=subject)
     except Exception as exc:
-        logger.error("email_send_failed", to=recipient, subject=subject, error=str(exc))
+        logger.error("email_send_failed", to=to, subject=subject, error=str(exc))
         raise
 
 

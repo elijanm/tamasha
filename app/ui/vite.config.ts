@@ -10,8 +10,11 @@ export default defineConfig({
     },
   },
   server: {
-    host: true,         // bind to 0.0.0.0 so ngrok / LAN can reach it
-    allowedHosts: true, // allow any hostname (ngrok, LAN, custom domains)
+    host: true,
+    allowedHosts: true,
+    hmr: {
+      clientPort: 443, // browser reaches HMR through the reverse proxy on 443
+    },
     proxy: {
       "/api": {
         target: process.env.VITE_API_TARGET ?? "http://localhost:8000",
