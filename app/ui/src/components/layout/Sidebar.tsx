@@ -18,7 +18,8 @@ interface NavItem {
 
 const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   superadmin: [
-    { label: "Billing",  to: "/superadmin/billing", icon: CreditCard },
+    { label: "Billing",  to: "/superadmin/billing",  icon: CreditCard },
+    { label: "Settings", to: "/superadmin/settings", icon: Settings   },
   ],
   admin: [
     { label: "Dashboard",     to: "/admin",                  icon: LayoutDashboard },

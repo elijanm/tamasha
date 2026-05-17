@@ -2,8 +2,10 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Shield, User as UserIcon, Disc3, Headphones, ShieldCheck,
-  UserPlus, Mail, ToggleLeft, ToggleRight, Search, X, Eye, EyeOff,
+  UserPlus, Mail, ToggleLeft, ToggleRight, Search, X, Eye, EyeOff, Pencil, Check,
 } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -11,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { usersApi, type CreateUserPayload, type UsersListParams } from "@/api/users";
+import { usersApi, type CreateUserPayload, type UsersListParams, type UpdateProfilePayload } from "@/api/users";
 import { toast } from "@/hooks/useToast";
 import { formatDate, getInitials } from "@/utils/format";
 import type { Role, User } from "@/types";
@@ -216,9 +218,86 @@ function InviteLinkPanel({ onClose }: { onClose: () => void }) {
 
 // ── User row ──────────────────────────────────────────────────────────────────
 
+function EditProfilePanel({ user, onClose }: { user: User; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [displayName, setDisplayName] = useState(user.profile?.display_name ?? "");
+  const [bio, setBio] = useState(user.profile?.bio ?? "");
+  const [phone, setPhone] = useState(user.profile?.phone ?? "");
+
+  const { mutate, isPending } = useMutation({
+    mutationFn: () => {
+      const payload: UpdateProfilePayload = {
+        display_name: displayName || undefined,
+        bio: bio || undefined,
+        phone: phone || undefined,
+      };
+      return usersApi.updateUser(user.id, payload);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["users"] });
+      toast({ title: "Profile updated", variant: "success" });
+      onClose();
+    },
+    onError: (err: any) => {
+      toast({ title: err?.response?.data?.detail ?? "Failed to update profile", variant: "destructive" });
+    },
+  });
+
+  return (
+    <tr>
+      <td colSpan={6} className="px-4 pb-4 pt-0">
+        <div className="border border-violet-800/40 rounded-xl bg-stone-900/60 p-4 space-y-3">
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-xs font-mono font-semibold text-stone-400 uppercase tracking-wider">Edit profile — {user.username}</p>
+            <button onClick={onClose} className="text-stone-500 hover:text-stone-300 transition-colors">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-[10px] font-mono uppercase tracking-wider text-stone-500">Display name</Label>
+              <Input
+                placeholder="Display name" value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                className="h-9 text-sm" maxLength={100}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[10px] font-mono uppercase tracking-wider text-stone-500">Phone</Label>
+              <Input
+                placeholder="+254 7XX XXX XXX" value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                className="h-9 text-sm" maxLength={30}
+              />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[10px] font-mono uppercase tracking-wider text-stone-500">Bio</Label>
+            <Textarea
+              placeholder="Short description" value={bio}
+              onChange={(e) => setBio(e.target.value)}
+              maxLength={1000} rows={2} className="resize-none text-sm"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <Button variant="ghost" size="sm" onClick={onClose} className="h-7 text-xs">Cancel</Button>
+            <Button
+              size="sm" onClick={() => mutate()} disabled={isPending}
+              className="h-7 text-xs bg-violet-600 hover:bg-violet-500 text-white border-0 gap-1"
+            >
+              {isPending ? "Saving…" : <><Check className="w-3 h-3" /> Save</>}
+            </Button>
+          </div>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 function UserRow({ user }: { user: User }) {
   const qc = useQueryClient();
   const [newRole, setNewRole] = useState<Role>(user.role);
+  const [editing, setEditing] = useState(false);
 
   const { mutate: changeRole, isPending: roleChanging } = useMutation({
     mutationFn: (role: Role) => usersApi.updateRole(user.id, role),
@@ -250,78 +329,96 @@ function UserRow({ user }: { user: User }) {
   const RoleIcon = ROLE_ICONS[user.role];
 
   return (
-    <tr className="border-b border-stone-800/50 hover:bg-stone-800/20 transition-colors">
-      <td className="px-4 py-3.5">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-stone-800 flex items-center justify-center flex-shrink-0">
-            <span className="text-xs font-display font-semibold text-stone-400">
-              {getInitials(user.username)}
-            </span>
+    <>
+      <tr className={`border-b border-stone-800/50 hover:bg-stone-800/20 transition-colors ${editing ? "bg-stone-800/30" : ""}`}>
+        <td className="px-4 py-3.5">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-stone-800 flex items-center justify-center flex-shrink-0 overflow-hidden">
+              {user.profile?.avatar_url ? (
+                <img src={user.profile.avatar_url} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-xs font-display font-semibold text-stone-400">
+                  {getInitials(user.username)}
+                </span>
+              )}
+            </div>
+            <div>
+              <p className="text-sm font-body font-medium text-stone-200">
+                {user.profile?.display_name || user.username}
+              </p>
+              <p className="text-xs font-mono text-stone-600">{user.email}</p>
+            </div>
           </div>
-          <div>
-            <p className="text-sm font-body font-medium text-stone-200">{user.username}</p>
-            <p className="text-xs font-mono text-stone-600">{user.email}</p>
+        </td>
+        <td className="px-4 py-3.5">
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-xs font-mono ${ROLE_BG[user.role]}`}>
+            <RoleIcon className="w-3 h-3" />
+            {user.role}
+          </span>
+        </td>
+        <td className="px-4 py-3.5">
+          <button
+            onClick={() => toggleActive()}
+            disabled={toggling}
+            className="flex items-center gap-1.5 text-xs font-mono transition-colors"
+            style={{ color: user.is_active ? "#34d399" : "#57534e" }}
+          >
+            {user.is_active
+              ? <ToggleRight className="w-4 h-4" />
+              : <ToggleLeft className="w-4 h-4" />}
+            {user.is_active ? "active" : "inactive"}
+          </button>
+        </td>
+        <td className="px-4 py-3.5 hidden lg:table-cell">
+          <span className="text-xs font-mono text-stone-600">{formatDate(user.created_at)}</span>
+        </td>
+        <td className="px-4 py-3.5">
+          <div className="flex items-center gap-2">
+            <Select value={newRole} onValueChange={(v) => setNewRole(v as Role)}>
+              <SelectTrigger className="h-7 w-28 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ROLES.map((r) => (
+                  <SelectItem key={r} value={r} className="capitalize">{r}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {newRole !== user.role && (
+              <Button
+                size="sm" variant="outline"
+                onClick={() => changeRole(newRole)}
+                disabled={roleChanging}
+                className="h-7 text-xs"
+              >
+                Save
+              </Button>
+            )}
           </div>
-        </div>
-      </td>
-      <td className="px-4 py-3.5">
-        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-xs font-mono ${ROLE_BG[user.role]}`}>
-          <RoleIcon className="w-3 h-3" />
-          {user.role}
-        </span>
-      </td>
-      <td className="px-4 py-3.5">
-        <button
-          onClick={() => toggleActive()}
-          disabled={toggling}
-          className="flex items-center gap-1.5 text-xs font-mono transition-colors"
-          style={{ color: user.is_active ? "#34d399" : "#57534e" }}
-        >
-          {user.is_active
-            ? <ToggleRight className="w-4 h-4" />
-            : <ToggleLeft className="w-4 h-4" />}
-          {user.is_active ? "active" : "inactive"}
-        </button>
-      </td>
-      <td className="px-4 py-3.5 hidden lg:table-cell">
-        <span className="text-xs font-mono text-stone-600">{formatDate(user.created_at)}</span>
-      </td>
-      <td className="px-4 py-3.5">
-        <div className="flex items-center gap-2">
-          <Select value={newRole} onValueChange={(v) => setNewRole(v as Role)}>
-            <SelectTrigger className="h-7 w-28 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {ROLES.map((r) => (
-                <SelectItem key={r} value={r} className="capitalize">{r}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {newRole !== user.role && (
-            <Button
-              size="sm" variant="outline"
-              onClick={() => changeRole(newRole)}
-              disabled={roleChanging}
-              className="h-7 text-xs"
+        </td>
+        <td className="px-4 py-3.5">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setEditing(!editing)}
+              className={`flex items-center gap-1 text-xs font-mono transition-colors ${editing ? "text-violet-400" : "text-stone-500 hover:text-violet-400"}`}
+              title="Edit profile"
             >
-              Save
-            </Button>
-          )}
-        </div>
-      </td>
-      <td className="px-4 py-3.5">
-        <button
-          onClick={() => sendInvite()}
-          disabled={sending}
-          className="flex items-center gap-1 text-xs font-mono text-stone-500 hover:text-violet-400 transition-colors disabled:opacity-40"
-          title="Resend invite email"
-        >
-          <Mail className="w-3.5 h-3.5" />
-          {sending ? "sending…" : "invite"}
-        </button>
-      </td>
-    </tr>
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => sendInvite()}
+              disabled={sending}
+              className="flex items-center gap-1 text-xs font-mono text-stone-500 hover:text-violet-400 transition-colors disabled:opacity-40"
+              title="Resend invite email"
+            >
+              <Mail className="w-3.5 h-3.5" />
+              {sending ? "sending…" : "invite"}
+            </button>
+          </div>
+        </td>
+      </tr>
+      {editing && <EditProfilePanel user={user} onClose={() => setEditing(false)} />}
+    </>
   );
 }
 

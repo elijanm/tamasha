@@ -23,6 +23,7 @@ export interface User {
   email: string;
   username: string;
   role: Role;
+  extra_permissions: string[];
   is_active: boolean;
   is_verified: boolean;
   profile?: UserProfile;

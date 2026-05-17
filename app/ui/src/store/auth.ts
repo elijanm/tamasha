@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { authApi } from "@/api/auth";
 import { _audio } from "@/store/player";
+import { queryClient } from "@/lib/queryClient";
 import type { User } from "@/types";
 
 interface AuthState {
@@ -29,7 +30,8 @@ export const useAuthStore = create<AuthState>()(
       error: null,
 
       login: async (email, password) => {
-        set({ isLoading: true, error: null });
+        // Clear previous user immediately so stale role data never leaks to components
+        set({ isLoading: true, error: null, user: null, accessToken: null, refreshToken: null });
         try {
           const tokens = await authApi.login({ email, password });
           set({
@@ -37,6 +39,8 @@ export const useAuthStore = create<AuthState>()(
             refreshToken: tokens.refresh_token,
           });
           const user = await authApi.me();
+          // Flush all cached queries from the previous session before updating the user
+          queryClient.clear();
           set({ user, isLoading: false });
           const { usePlayerStore } = await import("@/store/player");
           const player = usePlayerStore.getState();

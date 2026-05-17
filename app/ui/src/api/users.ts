@@ -69,4 +69,19 @@ export const usersApi = {
     });
     return res.data;
   },
+
+  updateUser: async (id: string, payload: UpdateProfilePayload): Promise<User> => {
+    const res = await api.patch<User>(`/users/${id}`, payload);
+    return res.data;
+  },
+
+  grantPermission: async (id: string, permission: string): Promise<User> => {
+    const res = await api.post<User>(`/users/${id}/permissions/${permission}`);
+    return res.data;
+  },
+
+  revokePermission: async (id: string, permission: string): Promise<User> => {
+    const res = await api.delete<User>(`/users/${id}/permissions/${permission}`);
+    return res.data;
+  },
 };

@@ -15,7 +15,7 @@ from app.schemas.user import (
     UserRoleUpdateRequest,
     UserUpdateRequest,
 )
-from app.core.exceptions import ValidationError
+from app.core.exceptions import ForbiddenError, ValidationError
 from app.services import auth_service, user_service
 from app.tasks.email import dispatch_invite_email, dispatch_invite_link_email
 
@@ -143,7 +143,7 @@ async def list_users(
     db: AsyncIOMotorDatabase = Depends(get_db),
 ) -> UserListResponse:
     page = PageParams(skip=skip, limit=limit)
-    users, total = await user_service.list_users(db, page, role, search)
+    users, total = await user_service.list_users(db, page, role, search, caller_role=_actor.role)
     return UserListResponse(items=[_to_response(u) for u in users], total=total, skip=skip, limit=limit)
 
 
@@ -153,11 +153,14 @@ async def get_user(
     actor: UserDocument = Depends(get_current_active_user),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ) -> UserResponse:
-    # Admin can view anyone; others can only view themselves
     from app.core.exceptions import ForbiddenError
-    if actor.role != "admin" and str(actor.id) != user_id:
+    if actor.role not in ("admin", "superadmin") and str(actor.id) != user_id:
         raise ForbiddenError("You can only view your own profile")
-    return _to_response(await user_service.get_user(db, user_id))
+    target = await user_service.get_user(db, user_id)
+    # Non-superadmin cannot view superadmin accounts
+    if target.role == "superadmin" and actor.role != "superadmin":
+        raise ForbiddenError("You do not have permission to view this account")
+    return _to_response(target)
 
 
 @router.patch("/{user_id}", response_model=UserResponse)
@@ -192,6 +195,34 @@ async def deactivate_user(
     db: AsyncIOMotorDatabase = Depends(get_db),
 ) -> None:
     await user_service.deactivate_user(db, user_id, actor, **_ctx(request))
+
+
+@router.post("/{user_id}/permissions/{permission}", response_model=UserResponse)
+async def grant_permission(
+    user_id: str,
+    permission: str,
+    request: Request,
+    actor: UserDocument = Depends(get_current_active_user),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+) -> UserResponse:
+    if actor.role != "superadmin":
+        raise ForbiddenError("Only superadmin can grant permissions")
+    updated = await user_service.grant_permission(db, user_id, permission, actor, **_ctx(request))
+    return _to_response(updated)
+
+
+@router.delete("/{user_id}/permissions/{permission}", response_model=UserResponse)
+async def revoke_permission(
+    user_id: str,
+    permission: str,
+    request: Request,
+    actor: UserDocument = Depends(get_current_active_user),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+) -> UserResponse:
+    if actor.role != "superadmin":
+        raise ForbiddenError("Only superadmin can revoke permissions")
+    updated = await user_service.revoke_permission(db, user_id, permission, actor, **_ctx(request))
+    return _to_response(updated)
 
 
 @router.patch("/{user_id}/activate", response_model=UserResponse)

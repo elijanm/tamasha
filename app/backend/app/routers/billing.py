@@ -31,6 +31,15 @@ def _require_superadmin(actor: UserDocument = Depends(get_current_active_user)) 
     return actor
 
 
+def _require_billing_view(actor: UserDocument = Depends(get_current_active_user)) -> UserDocument:
+    """Superadmin always allowed; admin requires the 'accounting' extra permission."""
+    if actor.role == "superadmin":
+        return actor
+    if actor.role == "admin" and "accounting" in (actor.extra_permissions or []):
+        return actor
+    raise ForbiddenError("You need the Accounting permission to view billing")
+
+
 # ── Gate status (all authenticated users) ─────────────────────────────────────
 
 @router.get("/gate-status", response_model=BillingGateStatus)
@@ -117,7 +126,7 @@ async def set_reminder_days(
 async def list_invoices(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
-    actor: UserDocument = Depends(_require_superadmin),
+    actor: UserDocument = Depends(_require_billing_view),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ) -> dict:
     docs, total = await billing_service.list_invoices(db, skip=skip, limit=limit)
@@ -158,7 +167,7 @@ async def create_invoice(
 @router.get("/invoices/{invoice_id}", response_model=InvoiceResponse)
 async def get_invoice(
     invoice_id: str,
-    actor: UserDocument = Depends(_require_superadmin),
+    actor: UserDocument = Depends(_require_billing_view),
     db: AsyncIOMotorDatabase = Depends(get_db),
 ) -> InvoiceResponse:
     doc = await billing_service.get_invoice(db, invoice_id)

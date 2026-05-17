@@ -83,10 +83,16 @@ async def list_users(
     page: PageParams,
     role: str | None = None,
     search: str | None = None,
+    caller_role: str = "admin",
 ) -> tuple[list[UserDocument], int]:
     query: dict = {}
     if role:
+        # Non-superadmin callers can never list superadmin accounts
+        if role == "superadmin" and caller_role != "superadmin":
+            return [], 0
         query["role"] = role
+    elif caller_role != "superadmin":
+        query["role"] = {"$ne": "superadmin"}
     if search:
         import re
         pattern = re.compile(re.escape(search), re.IGNORECASE)
@@ -107,9 +113,11 @@ async def update_user(
     request_id: str = "",
 ) -> UserDocument:
     doc = await _get_user_doc(db, user_id)
-    # Non-admin can only edit own profile
-    if actor.role != "admin" and str(doc["_id"]) != str(actor.id):
+    # Non-admin can only edit own profile; admin cannot edit superadmin profiles
+    if actor.role not in ("admin", "superadmin") and str(doc["_id"]) != str(actor.id):
         raise ForbiddenError("You can only update your own profile")
+    if doc.get("role") == "superadmin" and actor.role != "superadmin":
+        raise ForbiddenError("You cannot modify a superadmin account")
 
     updates: dict = {}
     if body.display_name is not None:
@@ -156,6 +164,12 @@ async def change_role(
 ) -> UserDocument:
     doc = await _get_user_doc(db, user_id)
     before_role = doc.get("role")
+    # Only superadmin can interact with superadmin accounts or promote to superadmin
+    if actor.role != "superadmin":
+        if before_role == "superadmin":
+            raise ForbiddenError("You cannot modify a superadmin account")
+        if body.role == "superadmin":
+            raise ForbiddenError("You cannot promote a user to superadmin")
     now = utc_now()
     await db["users"].update_one(
         {"_id": doc["_id"]},
@@ -166,6 +180,67 @@ async def change_role(
         actor_ip=actor_ip, actor_ua=actor_ua,
         action="user.role_change", entity_type="user", entity_id=user_id,
         before={"role": before_role}, after={"role": body.role},
+        request_id=request_id,
+    )
+    updated = await db["users"].find_one({"_id": doc["_id"]})
+    return _doc_to_model(updated)
+
+
+GRANTABLE_PERMISSIONS = {"accounting"}
+
+
+async def grant_permission(
+    db: AsyncIOMotorDatabase,
+    user_id: str,
+    permission: str,
+    actor: UserDocument,
+    actor_ip: str = "",
+    actor_ua: str = "",
+    request_id: str = "",
+) -> UserDocument:
+    if permission not in GRANTABLE_PERMISSIONS:
+        raise ForbiddenError(f"Permission '{permission}' cannot be granted")
+    doc = await _get_user_doc(db, user_id)
+    if doc.get("role") not in ("admin",):
+        raise ForbiddenError("Extra permissions can only be granted to admin users")
+    now = utc_now()
+    await db["users"].update_one(
+        {"_id": doc["_id"]},
+        {"$addToSet": {"extra_permissions": permission}, "$set": {"updated_at": now}},
+    )
+    await write_audit_log(
+        db, actor_id=str(actor.id), actor_role=actor.role,
+        actor_ip=actor_ip, actor_ua=actor_ua,
+        action="user.permission_grant", entity_type="user", entity_id=user_id,
+        before={}, after={"permission": permission},
+        request_id=request_id,
+    )
+    updated = await db["users"].find_one({"_id": doc["_id"]})
+    return _doc_to_model(updated)
+
+
+async def revoke_permission(
+    db: AsyncIOMotorDatabase,
+    user_id: str,
+    permission: str,
+    actor: UserDocument,
+    actor_ip: str = "",
+    actor_ua: str = "",
+    request_id: str = "",
+) -> UserDocument:
+    if permission not in GRANTABLE_PERMISSIONS:
+        raise ForbiddenError(f"Permission '{permission}' cannot be revoked")
+    doc = await _get_user_doc(db, user_id)
+    now = utc_now()
+    await db["users"].update_one(
+        {"_id": doc["_id"]},
+        {"$pull": {"extra_permissions": permission}, "$set": {"updated_at": now}},
+    )
+    await write_audit_log(
+        db, actor_id=str(actor.id), actor_role=actor.role,
+        actor_ip=actor_ip, actor_ua=actor_ua,
+        action="user.permission_revoke", entity_type="user", entity_id=user_id,
+        before={"permission": permission}, after={},
         request_id=request_id,
     )
     updated = await db["users"].find_one({"_id": doc["_id"]})

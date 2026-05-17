@@ -19,6 +19,13 @@ export function useAuth() {
   const isArtist = role === "artist";
   const isListener = role === "listener";
 
+  const hasPermission = (permission: string): boolean => {
+    if (role === "superadmin") return true;
+    return (user?.extra_permissions ?? []).includes(permission);
+  };
+
+  const hasAccounting = isSuperAdmin || (role === "admin" && hasPermission("accounting"));
+
   return {
     user,
     accessToken,
@@ -35,5 +42,7 @@ export function useAuth() {
     isStaff,
     isArtist,
     isListener,
+    hasPermission,
+    hasAccounting,
   };
 }

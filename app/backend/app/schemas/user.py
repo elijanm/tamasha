@@ -25,6 +25,7 @@ class UserResponse(BaseModel):
     email: str
     username: str
     role: Literal["superadmin", "admin", "staff", "artist", "listener"]
+    extra_permissions: list[str] = Field(default_factory=list)
     is_active: bool
     is_verified: bool
     profile: UserProfileResponse

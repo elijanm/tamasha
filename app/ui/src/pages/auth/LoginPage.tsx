@@ -2,11 +2,13 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Loader2, ArrowRight } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useAuthStore } from "@/store/auth";
 import { useTheme } from "@/context/ThemeContext";
 import { Input } from "@/components/ui/input";
 import type { Role } from "@/types";
 
 const ROLE_REDIRECTS: Record<Role, string> = {
+  superadmin: "/superadmin/billing",
   admin: "/admin",
   staff: "/staff",
   artist: "/artist",
@@ -24,11 +26,11 @@ function useLoginForm() {
     clearError();
     try {
       await login(email, password);
-      const stored = localStorage.getItem("tamasha-auth");
-      if (stored) {
-        const parsed = JSON.parse(stored) as { state?: { user?: { role?: Role } } };
-        const role = parsed?.state?.user?.role;
-        if (role && ROLE_REDIRECTS[role]) { navigate(ROLE_REDIRECTS[role]); return; }
+      // Role is now set in the store after login() resolves; read directly from store
+      const currentRole = useAuthStore.getState().user?.role as Role | undefined;
+      if (currentRole && ROLE_REDIRECTS[currentRole]) {
+        navigate(ROLE_REDIRECTS[currentRole]);
+        return;
       }
       navigate("/");
     } catch { /* error is in store */ }

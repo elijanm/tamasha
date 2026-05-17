@@ -27,6 +27,7 @@ class UserDocument(BaseModel):
     username: str
     hashed_password: str
     role: Literal["superadmin", "admin", "staff", "artist", "listener"] = "listener"
+    extra_permissions: list[str] = Field(default_factory=list)
     is_active: bool = True
     is_verified: bool = False
     email_verified_at: datetime | None = None
