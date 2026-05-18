@@ -38,7 +38,10 @@ async def recognize(db: AsyncIOMotorDatabase, audio_bytes: bytes) -> RecognizeRe
         return RecognizeResponse(match=False, score=0)
 
     def _query() -> dict[bytes, list[tuple[int, int]]]:
-        store = FingerprintStore(settings.fingerprint_db_path, read_only=True)
+        try:
+            store = FingerprintStore(settings.fingerprint_db_path, read_only=True)
+        except Exception:
+            return {}
         try:
             return store.query(fps)
         finally:

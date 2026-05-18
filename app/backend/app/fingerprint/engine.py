@@ -36,18 +36,21 @@ def fingerprint_file(path: str) -> list[tuple[int, int]]:
 
 def fingerprint_bytes(audio_bytes: bytes) -> list[tuple[int, int]]:
     """Fingerprint raw audio bytes (any format FFmpeg can decode)."""
-    result = subprocess.run(
-        [
-            "ffmpeg", "-y", "-i", "pipe:0",
-            "-t", str(MAX_FINGERPRINT_SECONDS),
-            "-ac", "1", "-ar", str(SAMPLE_RATE),
-            "-f", "f32le", "pipe:1",
-        ],
-        input=audio_bytes,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        check=True,
-    )
+    try:
+        result = subprocess.run(
+            [
+                "ffmpeg", "-y", "-i", "pipe:0",
+                "-t", str(MAX_FINGERPRINT_SECONDS),
+                "-ac", "1", "-ar", str(SAMPLE_RATE),
+                "-f", "f32le", "pipe:1",
+            ],
+            input=audio_bytes,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=True,
+        )
+    except subprocess.CalledProcessError:
+        return []
     return _fingerprint_pcm(np.frombuffer(result.stdout, dtype=np.float32))
 
 
