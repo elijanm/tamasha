@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Download, Upload, CheckCircle2, AlertTriangle, Loader2, FileSpreadsheet, Info } from "lucide-react";
+import { Download, Upload, CheckCircle2, AlertTriangle, Loader2, FileSpreadsheet, Info, ArrowRight } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
@@ -20,6 +20,7 @@ interface ImportResult {
 }
 
 export function BulkMetadataModal({ open, onClose, onImported }: Props) {
+  const [tab, setTab] = useState<"download" | "upload">("download");
   const [downloading, setDownloading] = useState(false);
   const [downloadDone, setDownloadDone] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -30,7 +31,14 @@ export function BulkMetadataModal({ open, onClose, onImported }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
 
   function handleOpenChange(o: boolean) {
-    if (!o) onClose();
+    if (!o) {
+      setTab("download");
+      setDownloadDone(false);
+      setResult(null);
+      setUploadFile(null);
+      setError("");
+      onClose();
+    }
   }
 
   async function handleDownload() {
@@ -76,7 +84,7 @@ export function BulkMetadataModal({ open, onClose, onImported }: Props) {
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="download" className="w-full">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as "download" | "upload")} className="w-full">
           <div className="px-6 border-b border-stone-800">
             <TabsList className="bg-transparent p-0 h-auto gap-0 rounded-none">
               <TabsTrigger
@@ -125,9 +133,18 @@ export function BulkMetadataModal({ open, onClose, onImported }: Props) {
             {error && <p className="text-xs text-red-400 font-mono">{error}</p>}
 
             {downloadDone && (
-              <div className="flex items-center gap-2 text-xs text-emerald-400 font-mono">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                CSV downloaded — fill it in, then switch to Upload CSV.
+              <div className="rounded-xl p-3 bg-emerald-500/5 border border-emerald-500/20 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-xs text-emerald-400 font-mono">
+                  <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
+                  CSV downloaded — fill in the metadata, then upload.
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => setTab("upload")}
+                  className="h-7 text-xs bg-emerald-600 hover:bg-emerald-500 text-white border-0 gap-1 flex-shrink-0"
+                >
+                  Upload CSV <ArrowRight className="w-3 h-3" />
+                </Button>
               </div>
             )}
 
