@@ -72,6 +72,15 @@ def list_objects(prefix: str = "", max_keys: int = 1000) -> Generator[dict, None
         kwargs["ContinuationToken"] = response["NextContinuationToken"]
 
 
+def presigned_url(key: str, expiry: int = 300) -> str:
+    settings = get_settings()
+    return get_r2_client().generate_presigned_url(
+        "get_object",
+        Params={"Bucket": settings.r2_bucket, "Key": key},
+        ExpiresIn=expiry,
+    )
+
+
 def object_exists(key: str) -> bool:
     settings = get_settings()
     try:

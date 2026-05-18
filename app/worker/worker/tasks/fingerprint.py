@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import os
-import tempfile
-
 import structlog
 from bson import ObjectId
 from celery import Task
@@ -14,7 +11,7 @@ from worker.config import get_settings
 from worker.db.mongo import get_db
 from worker.fingerprint.engine import fingerprint_file
 from worker.fingerprint.store import FingerprintStore
-from worker.storage.r2 import download_to_file
+from worker.storage.r2 import presigned_url
 
 logger = structlog.get_logger(__name__)
 
@@ -66,14 +63,9 @@ def fingerprint_track(self: Task, track_id: str) -> dict:
         store.close()
         return {"status": "skipped", "reason": "already_indexed"}
 
-    tmp_path: str | None = None
     try:
-        suffix = os.path.splitext(r2_key)[1] or ".bin"
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
-            tmp_path = f.name
-
-        download_to_file(r2_key, tmp_path)
-        fps = fingerprint_file(tmp_path)
+        url = presigned_url(r2_key, expiry=300)
+        fps = fingerprint_file(url)
 
         if not fps:
             store.close()
@@ -102,12 +94,6 @@ def fingerprint_track(self: Task, track_id: str) -> dict:
                 pass
         logger.error("fingerprint.error", track_id=track_id, error=str(exc))
         raise self.retry(exc=exc)
-    finally:
-        if tmp_path:
-            try:
-                os.unlink(tmp_path)
-            except Exception:
-                pass
 
 
 @app.task(name="worker.tasks.fingerprint.fingerprint_all")

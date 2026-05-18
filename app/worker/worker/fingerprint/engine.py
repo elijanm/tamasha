@@ -15,6 +15,7 @@ FAN_VALUE = 15
 MAX_HASH_TIME_DELTA = 200
 PEAK_NEIGHBORHOOD = 20
 PEAK_PERCENTILE = 75  # only keep peaks above this percentile of the spectrogram
+MAX_FINGERPRINT_SECONDS = 60  # only process first N seconds — sufficient for identification
 
 
 def fingerprint_file(path: str) -> list[tuple[int, int]]:
@@ -22,6 +23,7 @@ def fingerprint_file(path: str) -> list[tuple[int, int]]:
     result = subprocess.run(
         [
             "ffmpeg", "-y", "-i", path,
+            "-t", str(MAX_FINGERPRINT_SECONDS),
             "-ac", "1", "-ar", str(SAMPLE_RATE),
             "-f", "f32le", "-",
         ],
@@ -37,6 +39,7 @@ def fingerprint_bytes(audio_bytes: bytes) -> list[tuple[int, int]]:
     result = subprocess.run(
         [
             "ffmpeg", "-y", "-i", "pipe:0",
+            "-t", str(MAX_FINGERPRINT_SECONDS),
             "-ac", "1", "-ar", str(SAMPLE_RATE),
             "-f", "f32le", "pipe:1",
         ],
