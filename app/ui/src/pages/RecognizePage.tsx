@@ -13,7 +13,7 @@ interface RecognizeResult {
 
 type PageState = "idle" | "listening" | "processing" | "matched" | "no_match" | "error";
 
-const RECORD_SECONDS = 10;
+const RECORD_SECONDS = 15;
 
 function ConfidenceBar({ value }: { value: number }) {
   const pct = Math.round(value * 100);
@@ -61,7 +61,8 @@ export function RecognizePage() {
       return;
     }
 
-    const mr = new MediaRecorder(stream);
+    const options: MediaRecorderOptions = { audioBitsPerSecond: 128000 };
+    const mr = new MediaRecorder(stream, MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? { ...options, mimeType: "audio/webm;codecs=opus" } : options);
     recorderRef.current = mr;
 
     mr.ondataavailable = (e) => {

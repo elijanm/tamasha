@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections import Counter
 
+import structlog
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
@@ -12,8 +13,10 @@ from app.fingerprint.store import FingerprintStore
 from app.schemas.recognize import RecognizeResponse
 from app.utils.r2 import generate_presigned_url
 
+logger = structlog.get_logger(__name__)
+
 # Minimum aligned time-delta matches required to declare a hit
-_CONFIDENCE_THRESHOLD = 5
+_CONFIDENCE_THRESHOLD = 3
 # Score at which confidence saturates to 1.0
 _MAX_SCORE = 50
 
@@ -34,6 +37,7 @@ async def recognize(db: AsyncIOMotorDatabase, audio_bytes: bytes) -> RecognizeRe
 
     # CPU-bound + subprocess — run off the event loop
     fps = await loop.run_in_executor(None, fingerprint_bytes, audio_bytes)
+    logger.info("recognize.fingerprinted", fps_count=len(fps), audio_bytes=len(audio_bytes))
     if not fps:
         return RecognizeResponse(match=False, score=0)
 
@@ -48,11 +52,13 @@ async def recognize(db: AsyncIOMotorDatabase, audio_bytes: bytes) -> RecognizeRe
             store.close()
 
     matches = await loop.run_in_executor(None, _query)
+    logger.info("recognize.queried", candidates=len(matches))
     if not matches:
         return RecognizeResponse(match=False, score=0)
 
     scores = _align_score(matches)
     best_tid_bytes, best_score = scores[0]
+    logger.info("recognize.scored", best_score=best_score, threshold=_CONFIDENCE_THRESHOLD)
 
     if best_score < _CONFIDENCE_THRESHOLD:
         return RecognizeResponse(match=False, score=best_score)
