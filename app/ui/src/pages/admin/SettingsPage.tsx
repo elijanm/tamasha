@@ -4,7 +4,7 @@ import {
   Database, Zap, Server, CheckCircle2, XCircle, RefreshCw,
   AlertCircle, HardDrive, Activity, Music2, Users, Play,
   AlertTriangle, Package, Layers, Settings2, BarChart2,
-  Radio, Clock, Disc3, Eye, EyeOff,
+  Radio, Clock, Disc3, Eye, EyeOff, Fingerprint,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -154,6 +154,45 @@ function PoolJobRow({ job }: { job: SyncJob }) {
         </div>
       )}
     </div>
+  );
+}
+
+function FingerprintIndexCard() {
+  const triggerFp = useMutation({ mutationFn: adminApi.triggerFingerprintIndex });
+  return (
+    <Card className="p-4 space-y-3">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <p className="text-sm font-mono text-stone-300 font-medium">Acoustic Fingerprint Index</p>
+          <p className="text-xs font-mono text-stone-600 mt-0.5">
+            Indexes all canonical tracks into RocksDB for Shazam-style recognition
+          </p>
+        </div>
+        <button
+          onClick={() => triggerFp.mutate()}
+          disabled={triggerFp.isPending}
+          className="flex items-center gap-1.5 px-4 py-1.5 rounded-md bg-violet-500 hover:bg-violet-400 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-mono text-stone-950 font-semibold transition-colors flex-shrink-0"
+        >
+          <Fingerprint className="w-3.5 h-3.5" />
+          {triggerFp.isPending ? "Dispatching…" : "Build Index"}
+        </button>
+      </div>
+      {triggerFp.isSuccess && (
+        <p className="text-xs font-mono text-emerald-400">
+          Dispatched — workers are now indexing tracks in the background.
+        </p>
+      )}
+      {triggerFp.isError && (
+        <p className="text-xs font-mono text-red-400">Failed to trigger — is the worker running?</p>
+      )}
+      <p className="text-[10px] font-mono text-stone-700">
+        Visit{" "}
+        <a href="/recognize" target="_blank" className="text-violet-500 underline underline-offset-2">
+          /recognize
+        </a>{" "}
+        to test identification after indexing completes.
+      </p>
+    </Card>
   );
 }
 
@@ -580,6 +619,14 @@ export function SettingsPage() {
             ))}
           </div>
         )}
+      </section>}
+
+      {/* ── Fingerprint Index ───────────────────────────────────────────── */}
+      {!isStaff && <section className="space-y-3">
+        <h2 className="text-xs font-mono font-semibold text-stone-600 uppercase tracking-widest">
+          Fingerprint Index
+        </h2>
+        <FingerprintIndexCard />
       </section>}
 
       {/* ── Configurable Metrics ────────────────────────────────────────── */}

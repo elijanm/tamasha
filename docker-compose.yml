@@ -57,6 +57,9 @@ services:
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/2
       ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false}
+      FINGERPRINT_DB_PATH: /data/fingerprints
+    volumes:
+      - fingerprint_data:/data/fingerprints
     depends_on:
       mongodb:
         condition: service_healthy
@@ -92,6 +95,9 @@ services:
         condition: service_healthy
     volumes:
       - ./app/backend/app:/app/app
+      - fingerprint_data:/data/fingerprints
+    environment:
+      FINGERPRINT_DB_PATH: /data/fingerprints
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     profiles: [dev]
 
@@ -111,6 +117,7 @@ services:
       EMAIL_FROM: ${EMAIL_FROM:-}
       SANDBOX_EMAIL: ${SANDBOX_EMAIL:-}
       INVOICE_EMAIL: ${INVOICE_EMAIL:-}
+      FINGERPRINT_DB_PATH: /data/fingerprints
     depends_on:
       mongodb:
         condition: service_healthy
@@ -118,6 +125,7 @@ services:
         condition: service_healthy
     volumes:
       - ./app/worker/worker:/app/worker   # hot-reload worker code
+      - fingerprint_data:/data/fingerprints
 
   frontend:
     build:
@@ -139,6 +147,7 @@ services:
 volumes:
   mongodb_data:
   redis_data:
+  fingerprint_data:
 
 networks:
   default:

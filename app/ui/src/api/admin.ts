@@ -21,4 +21,9 @@ export const adminApi = {
     const res = await api.post<{ deleted: Record<string, number>; total: number }>("/admin/reset-catalogue");
     return res.data;
   },
+
+  triggerFingerprintIndex: async (): Promise<{ message: string; task_id: string | null }> => {
+    const res = await api.post<{ message: string; task_id: string | null }>("/admin/fingerprint-index");
+    return res.data;
+  },
 };

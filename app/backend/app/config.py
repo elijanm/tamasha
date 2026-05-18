@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     # ─── Billing ─────────────────────────────────────────────────────────────
     billing_banner_accounting: bool = True  # show billing banner to admins with accounting permission
 
+    # ─── Fingerprint index ───────────────────────────────────────────────────
+    fingerprint_db_path: str = "/data/fingerprints"
+
     # ─── Rate Limiting ───────────────────────────────────────────────────────
     rate_limit_per_minute: int = 60
 

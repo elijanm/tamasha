@@ -92,3 +92,16 @@ async def trigger_reindex(
     except Exception:
         task_id = None
     return {"message": "Reindex triggered", "task_id": task_id}
+
+
+@router.post("/fingerprint-index", status_code=202)
+async def trigger_fingerprint_index(
+    _actor: UserDocument = _admin,
+) -> dict:
+    """Dispatch fingerprint_all: indexes all canonical/non-duplicate tracks into RocksDB."""
+    from app.tasks.fingerprint import dispatch_fingerprint_all
+    try:
+        task_id = dispatch_fingerprint_all()
+    except Exception:
+        task_id = None
+    return {"message": "Fingerprint indexing triggered", "task_id": task_id}

@@ -29,6 +29,7 @@ app = Celery(
         "worker.tasks.analytics",
         "worker.tasks.backup",
         "worker.tasks.billing",
+        "worker.tasks.fingerprint",
     ],
 )
 

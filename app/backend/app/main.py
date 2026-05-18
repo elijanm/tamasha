@@ -83,6 +83,7 @@ def create_app() -> FastAPI:
         duplicates,
         media_monitoring,
         r2_pool,
+        recognize,
         sync_jobs,
         tracks,
         uploads,
@@ -103,6 +104,7 @@ def create_app() -> FastAPI:
     app.include_router(media_monitoring.router, prefix=prefix)
     app.include_router(duplicates.router, prefix=prefix)
     app.include_router(billing.router, prefix=prefix)
+    app.include_router(recognize.router, prefix=prefix)
 
     # ── Health check ──────────────────────────────────────────────────────────
     @app.get("/healthz", tags=["health"])

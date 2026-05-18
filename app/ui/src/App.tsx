@@ -25,6 +25,7 @@ import { BillingDashboard } from "@/pages/superadmin/BillingDashboard";
 import { SuperadminSettingsPage } from "@/pages/superadmin/SuperadminSettingsPage";
 import { NotEnabledPage } from "@/pages/NotEnabledPage";
 import { ProfilePage } from "@/pages/ProfilePage";
+import { RecognizePage } from "@/pages/RecognizePage";
 import { Toaster } from "@/components/ui/toaster";
 import { useAuth } from "@/hooks/useAuth";
 import type { Role } from "@/types";
@@ -103,6 +104,9 @@ function AppRoutes() {
         <Route path="/artist/*" element={<Navigate to="/not-enabled" replace />} />
         <Route path="/listener/*" element={<Navigate to="/not-enabled" replace />} />
       </Route>
+
+      {/* Public identify page — no auth required */}
+      <Route path="/recognize" element={<RecognizePage />} />
 
       <Route path="/unauthorized" element={<UnauthorizedPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />

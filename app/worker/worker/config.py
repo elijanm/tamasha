@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     aws_region: str = "us-east-1"
     aws_glacier_bucket: str = ""
 
+    # Fingerprint index (shared with backend via Docker volume)
+    fingerprint_db_path: str = "/data/fingerprints"
+
     # App
     app_base_url: str = "https://tamasha.app"
     environment: str = "development"
