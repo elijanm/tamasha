@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Download, Upload, CheckCircle2, AlertTriangle, Loader2, FileSpreadsheet } from "lucide-react";
+import { Download, Upload, AlertTriangle, Loader2, FileSpreadsheet, HelpCircle, ChevronDown } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
@@ -19,6 +19,7 @@ interface ImportResult {
 }
 
 export function BulkMetadataModal({ open, onClose, onImported }: Props) {
+  const [showHelp, setShowHelp] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -98,6 +99,43 @@ export function BulkMetadataModal({ open, onClose, onImported }: Props) {
             </button>
           </DialogDescription>
         </DialogHeader>
+
+        {/* Collapsible column guide */}
+        <div className="border-b border-stone-800">
+          <button
+            onClick={() => setShowHelp((v) => !v)}
+            className="w-full flex items-center justify-between px-6 py-3 text-xs font-mono text-stone-500 hover:text-stone-300 hover:bg-stone-900/40 transition-colors"
+          >
+            <span className="flex items-center gap-2">
+              <HelpCircle className="w-3.5 h-3.5 text-stone-600" />
+              Which columns can I edit?
+            </span>
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showHelp ? "rotate-180" : ""}`} />
+          </button>
+
+          {showHelp && (
+            <div className="px-6 pb-4 space-y-1.5">
+              {[
+                { col: "song_id",                    note: "Do not edit — used to match rows to tracks", locked: true },
+                { col: "folder",                     note: "Do not edit — R2 storage path", locked: true },
+                { col: "title, artist_name, album",  note: "Free text — edit as needed", locked: false },
+                { col: "year, genre, language",      note: "Free text — edit as needed", locked: false },
+                { col: "isrc, label, upc, catalogue_number", note: "Free text — edit as needed", locked: false },
+                { col: "composer, publisher, producer, remixer, featuring, band", note: "Free text — edit as needed", locked: false },
+                { col: "bpm, track_number, disc_number", note: "Numbers only", locked: false },
+                { col: "release_date",               note: "Format: YYYY-MM-DD", locked: false },
+                { col: "explicit",                   note: "true or false only", locked: false },
+                { col: "tags",                       note: "Comma-separated values", locked: false },
+              ].map(({ col, note, locked }) => (
+                <div key={col} className="flex items-start gap-2 text-xs font-mono">
+                  <span className={`flex-shrink-0 ${locked ? "text-red-400" : "text-violet-400"}`}>{col}</span>
+                  <span className="text-stone-600">— {note}</span>
+                  {locked && <span className="ml-auto text-[10px] text-red-500/70 bg-red-500/10 px-1.5 py-0.5 rounded font-mono flex-shrink-0">locked</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         <div className="px-6 py-5 space-y-4">
           {!result ? (
