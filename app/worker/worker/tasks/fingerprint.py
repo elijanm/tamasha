@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import structlog
 from bson import ObjectId
 from celery import Task
@@ -27,7 +29,9 @@ def _is_cancelled() -> bool:
         return False
 
 
-def _store(max_attempts: int = 15) -> FingerprintStore:
+def _store(max_attempts: int = 30) -> FingerprintStore:
+    """Open RocksDB with retry. Lock is held only briefly (one write), so
+    contention resolves fast — use shorter sleeps and more attempts."""
     import random, time
     path = get_settings().fingerprint_db_path
     for i in range(max_attempts):
@@ -35,7 +39,7 @@ def _store(max_attempts: int = 15) -> FingerprintStore:
             return FingerprintStore(path)
         except Exception as exc:
             if "LOCK" in str(exc) or "temporarily unavailable" in str(exc).lower():
-                time.sleep(1.0 + random.random() * 2.0)
+                time.sleep(0.2 + random.random() * 0.8)  # 0.2–1s, much shorter
                 continue
             raise
     raise RuntimeError("Could not acquire RocksDB write lock after retries")
@@ -52,56 +56,54 @@ def fingerprint_track(self: Task, track_id: str) -> dict:
     if not doc:
         return {"status": "skipped", "reason": "not_found"}
 
+    # Fast pre-check via MongoDB before touching RocksDB at all
+    if doc.get("fingerprinted"):
+        return {"status": "skipped", "reason": "already_indexed"}
+
     r2_key = doc.get("r2_key_transcoded") or doc.get("r2_key_raw")
     if not r2_key:
         return {"status": "skipped", "reason": "no_r2_key"}
 
-    store = _store()
-    tid_bytes = ObjectId(track_id).binary
-
-    if store.is_indexed(tid_bytes):
-        store.close()
-        return {"status": "skipped", "reason": "already_indexed"}
-
+    # --- Heavy work: download + compute fingerprints (no lock held) ---
     try:
         url = presigned_url(r2_key, expiry=300)
         fps = fingerprint_file(url)
+    except Exception as exc:
+        logger.error("fingerprint.compute_error", track_id=track_id, error=str(exc))
+        raise self.retry(exc=exc)
 
-        if not fps:
-            store.close()
-            return {"status": "skipped", "reason": "no_fingerprints"}
+    if not fps:
+        return {"status": "skipped", "reason": "no_fingerprints"}
 
+    # --- Brief critical section: acquire lock only for the write ---
+    tid_bytes = ObjectId(track_id).binary
+    store = _store()
+    try:
+        if store.is_indexed(tid_bytes):
+            return {"status": "skipped", "reason": "already_indexed"}
         store.put(tid_bytes, fps)
+    finally:
         store.close()
 
-        from datetime import datetime, timezone
-        db["tracks"].update_one(
-            {"_id": ObjectId(track_id)},
-            {"$set": {
-                "fingerprinted": True,
-                "fingerprint_count": len(fps),
-                "fingerprinted_at": datetime.now(timezone.utc),
-            }},
-        )
-        logger.info("fingerprint.indexed", track_id=track_id, count=len(fps))
-        return {"status": "ok", "fingerprints": len(fps)}
-
-    except Exception as exc:
-        if store:
-            try:
-                store.close()
-            except Exception:
-                pass
-        logger.error("fingerprint.error", track_id=track_id, error=str(exc))
-        raise self.retry(exc=exc)
+    db["tracks"].update_one(
+        {"_id": ObjectId(track_id)},
+        {"$set": {
+            "fingerprinted": True,
+            "fingerprint_count": len(fps),
+            "fingerprinted_at": datetime.now(timezone.utc),
+        }},
+    )
+    logger.info("fingerprint.indexed", track_id=track_id, count=len(fps))
+    return {"status": "ok", "fingerprints": len(fps)}
 
 
 @app.task(name="worker.tasks.fingerprint.fingerprint_all")
 def fingerprint_all() -> dict:
     """Dispatch fingerprint_track for every canonical / non-duplicate unindexed track."""
     db = get_db()
-    store = _store()
 
+    # Use MongoDB's fingerprinted flag for the skip check — avoid holding
+    # RocksDB open while iterating thousands of tracks.
     cursor = db["tracks"].find(
         {
             "$or": [
@@ -111,19 +113,15 @@ def fingerprint_all() -> dict:
             ],
             "status": {"$nin": ["archived", "deleted"]},
             "r2_key_raw": {"$exists": True, "$ne": ""},
+            "fingerprinted": {"$ne": True},
         },
         {"_id": 1},
     )
 
-    dispatched = skipped = 0
+    dispatched = 0
     for doc in cursor:
-        tid_bytes = doc["_id"].binary
-        if store.is_indexed(tid_bytes):
-            skipped += 1
-            continue
         fingerprint_track.delay(str(doc["_id"]))
         dispatched += 1
 
-    store.close()
-    logger.info("fingerprint.all_dispatched", dispatched=dispatched, skipped=skipped)
-    return {"dispatched": dispatched, "skipped": skipped}
+    logger.info("fingerprint.all_dispatched", dispatched=dispatched)
+    return {"dispatched": dispatched}
