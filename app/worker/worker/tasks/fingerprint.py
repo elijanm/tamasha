@@ -7,6 +7,8 @@ import structlog
 from bson import ObjectId
 from celery import Task
 
+import redis as redis_lib
+
 from worker.celery_app import app
 from worker.config import get_settings
 from worker.db.mongo import get_db
@@ -15,6 +17,17 @@ from worker.fingerprint.store import FingerprintStore
 from worker.storage.r2 import download_to_file
 
 logger = structlog.get_logger(__name__)
+
+_FP_CANCEL_KEY = "fingerprint:cancel"
+
+
+def _is_cancelled() -> bool:
+    try:
+        s = get_settings()
+        r = redis_lib.from_url(s.redis_url)
+        return bool(r.exists(_FP_CANCEL_KEY))
+    except Exception:
+        return False
 
 
 def _store(max_attempts: int = 15) -> FingerprintStore:
@@ -34,6 +47,9 @@ def _store(max_attempts: int = 15) -> FingerprintStore:
 @app.task(bind=True, max_retries=3, default_retry_delay=60,
           queue="default", name="worker.tasks.fingerprint.fingerprint_track")
 def fingerprint_track(self: Task, track_id: str) -> dict:
+    if _is_cancelled():
+        return {"status": "skipped", "reason": "cancelled"}
+
     db = get_db()
     doc = db["tracks"].find_one({"_id": ObjectId(track_id)})
     if not doc:

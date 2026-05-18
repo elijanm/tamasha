@@ -135,10 +135,33 @@ async def trigger_fingerprint_index(
     return {"message": "Fingerprint indexing triggered", "task_id": task_id}
 
 
+_FP_CANCEL_KEY = "fingerprint:cancel"
+
+
+@router.post("/fingerprint-cancel", status_code=200)
+async def cancel_fingerprint_index(
+    _actor: UserDocument = _admin,
+    redis: Redis = Depends(get_redis),
+) -> dict:
+    """Signal the worker to stop accepting new fingerprint_track tasks."""
+    await redis.set(_FP_CANCEL_KEY, "1", ex=3600)
+    return {"cancelled": True}
+
+
+@router.delete("/fingerprint-cancel", status_code=200)
+async def clear_fingerprint_cancel(
+    _actor: UserDocument = _admin,
+    redis: Redis = Depends(get_redis),
+) -> dict:
+    await redis.delete(_FP_CANCEL_KEY)
+    return {"cancelled": False}
+
+
 @router.get("/fingerprint-progress")
 async def fingerprint_progress(
     _actor: UserDocument = _admin_read,
     db: AsyncIOMotorDatabase = Depends(get_db),
+    redis: Redis = Depends(get_redis),
 ) -> dict:
     from datetime import datetime, timezone
 
@@ -167,6 +190,8 @@ async def fingerprint_progress(
             now         = datetime.now(timezone.utc)
 
             if started_at and bytes_done > 0:
+                if started_at.tzinfo is None:
+                    started_at = started_at.replace(tzinfo=timezone.utc)
                 elapsed = max((now - started_at).total_seconds(), 1)
                 bytes_per_sec = bytes_done / elapsed
                 speed_mbps    = round(bytes_per_sec / (1024 * 1024), 2)
@@ -184,6 +209,8 @@ async def fingerprint_progress(
                 if rem_agg and bytes_per_sec > 0:
                     eta_seconds = int((rem_agg[0].get("bytes", 0) or 0) / bytes_per_sec)
 
+    cancelled = bool(await redis.exists(_FP_CANCEL_KEY))
+
     return {
         "indexed":       indexed,
         "total":         total,
@@ -192,4 +219,5 @@ async def fingerprint_progress(
         "speed_mbps":    speed_mbps,
         "bytes_done_mb": bytes_done_mb,
         "eta_seconds":   eta_seconds,
+        "cancelled":     cancelled,
     }

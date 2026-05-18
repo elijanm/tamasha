@@ -213,7 +213,18 @@ function fmtEta(sec: number): string {
 }
 
 function FingerprintIndexCard() {
-  const triggerFp = useMutation({ mutationFn: adminApi.triggerFingerprintIndex });
+  const qc = useQueryClient();
+  const triggerFp = useMutation({
+    mutationFn: adminApi.triggerFingerprintIndex,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["fingerprint-progress"] });
+      adminApi.clearFingerprintCancel().catch(() => {});
+    },
+  });
+  const cancelFp = useMutation({
+    mutationFn: adminApi.cancelFingerprintIndex,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["fingerprint-progress"] }),
+  });
 
   const { data: progress } = useQuery({
     queryKey: ["fingerprint-progress"],
@@ -221,9 +232,10 @@ function FingerprintIndexCard() {
     refetchInterval: 5_000,
   });
 
-  const isRunning = progress && progress.indexed > 0 && progress.indexed < progress.total;
-  const isDone    = progress && progress.total > 0 && progress.indexed >= progress.total;
-  const pct       = progress?.pct ?? 0;
+  const isRunning  = progress && progress.indexed > 0 && progress.indexed < progress.total && !progress.cancelled;
+  const isDone     = progress && progress.total > 0 && progress.indexed >= progress.total;
+  const isCancelled = progress?.cancelled;
+  const pct        = progress?.pct ?? 0;
 
   return (
     <Card className="p-4 space-y-3">
@@ -235,14 +247,26 @@ function FingerprintIndexCard() {
             Indexes all canonical tracks into RocksDB for Shazam-style recognition
           </p>
         </div>
-        <button
-          onClick={() => triggerFp.mutate()}
-          disabled={triggerFp.isPending}
-          className="flex items-center gap-1.5 px-4 py-1.5 rounded-md bg-violet-500 hover:bg-violet-400 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-mono text-stone-950 font-semibold transition-colors flex-shrink-0"
-        >
-          <Fingerprint className="w-3.5 h-3.5" />
-          {triggerFp.isPending ? "Dispatching…" : "Build Index"}
-        </button>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {isRunning && (
+            <button
+              onClick={() => cancelFp.mutate()}
+              disabled={cancelFp.isPending}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-stone-800 hover:bg-red-500/15 border border-stone-700 hover:border-red-500/30 text-xs font-mono text-stone-400 hover:text-red-400 disabled:opacity-40 transition-colors"
+            >
+              <XCircle className="w-3.5 h-3.5" />
+              {cancelFp.isPending ? "Cancelling…" : "Cancel"}
+            </button>
+          )}
+          <button
+            onClick={() => triggerFp.mutate()}
+            disabled={triggerFp.isPending}
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded-md bg-violet-500 hover:bg-violet-400 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-mono text-stone-950 font-semibold transition-colors"
+          >
+            <Fingerprint className="w-3.5 h-3.5" />
+            {triggerFp.isPending ? "Dispatching…" : isCancelled ? "Resume" : "Build Index"}
+          </button>
+        </div>
       </div>
 
       {/* Progress bar + stats */}
@@ -254,15 +278,15 @@ function FingerprintIndexCard() {
               {progress.indexed.toLocaleString()}
               <span className="text-stone-600"> / {progress.total.toLocaleString()} tracks</span>
             </span>
-            <span className={isDone ? "text-emerald-400" : isRunning ? "text-violet-400" : "text-stone-600"}>
-              {pct}%
+            <span className={isDone ? "text-emerald-400" : isCancelled ? "text-orange-400" : isRunning ? "text-violet-400" : "text-stone-600"}>
+              {pct}%{isCancelled ? " · paused" : ""}
             </span>
           </div>
 
           {/* Bar */}
           <div className="h-1.5 bg-stone-800 rounded-full overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all duration-500 ${isDone ? "bg-emerald-500" : "bg-violet-500"} ${isRunning ? "animate-pulse" : ""}`}
+              className={`h-full rounded-full transition-all duration-500 ${isDone ? "bg-emerald-500" : isCancelled ? "bg-orange-500" : "bg-violet-500"} ${isRunning ? "animate-pulse" : ""}`}
               style={{ width: `${Math.max(pct, pct > 0 ? 1 : 0)}%` }}
             />
           </div>
@@ -270,7 +294,7 @@ function FingerprintIndexCard() {
           {/* Speed + ETA row */}
           <div className="flex items-center justify-between text-[10px] font-mono">
             <div className="flex items-center gap-3">
-              {progress.speed_mbps != null && (
+              {progress.speed_mbps != null && !isCancelled && (
                 <span className="text-stone-500">
                   <span className="text-stone-300">{progress.speed_mbps}</span> MB/s
                 </span>
@@ -284,6 +308,7 @@ function FingerprintIndexCard() {
                 <span className="text-violet-400">~{fmtEta(progress.eta_seconds)} left</span>
               )}
               {isDone && <span className="text-emerald-500">Complete</span>}
+              {isCancelled && <span className="text-orange-400">Paused — click Resume to continue</span>}
               <a href="/recognize" target="_blank" className="text-violet-500 hover:text-violet-400 underline underline-offset-2">
                 /recognize →
               </a>

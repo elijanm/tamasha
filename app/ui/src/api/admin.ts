@@ -40,8 +40,17 @@ export const adminApi = {
   fingerprintProgress: async (): Promise<{
     indexed: number; total: number; remaining: number; pct: number;
     speed_mbps: number | null; bytes_done_mb: number | null; eta_seconds: number | null;
+    cancelled: boolean;
   }> => {
     const res = await api.get("/admin/fingerprint-progress");
     return res.data;
+  },
+
+  cancelFingerprintIndex: async (): Promise<void> => {
+    await api.post("/admin/fingerprint-cancel");
+  },
+
+  clearFingerprintCancel: async (): Promise<void> => {
+    await api.delete("/admin/fingerprint-cancel");
   },
 };
