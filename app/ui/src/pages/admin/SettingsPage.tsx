@@ -223,7 +223,12 @@ function FingerprintIndexCard() {
   });
   const cancelFp = useMutation({
     mutationFn: adminApi.cancelFingerprintIndex,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["fingerprint-progress"] }),
+    onMutate: () => {
+      qc.setQueryData<typeof progress>(["fingerprint-progress"], (old) =>
+        old ? { ...old, cancelled: true } : old
+      );
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["fingerprint-progress"] }),
   });
 
   const { data: progress } = useQuery({
@@ -232,10 +237,10 @@ function FingerprintIndexCard() {
     refetchInterval: 5_000,
   });
 
-  const isRunning  = progress && progress.indexed > 0 && progress.indexed < progress.total && !progress.cancelled;
-  const isDone     = progress && progress.total > 0 && progress.indexed >= progress.total;
-  const isCancelled = progress?.cancelled;
-  const pct        = progress?.pct ?? 0;
+  const isDone      = !!progress && progress.total > 0 && progress.indexed >= progress.total;
+  const isCancelled = progress?.cancelled ?? false;
+  const isRunning   = !!progress && progress.total > 0 && !isDone && !isCancelled;
+  const pct         = progress?.pct ?? 0;
 
   return (
     <Card className="p-4 space-y-3">
@@ -248,10 +253,10 @@ function FingerprintIndexCard() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          {isRunning && (
+          {(isRunning || cancelFp.isPending) && (
             <button
               onClick={() => cancelFp.mutate()}
-              disabled={cancelFp.isPending}
+              disabled={cancelFp.isPending || isCancelled}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-stone-800 hover:bg-red-500/15 border border-stone-700 hover:border-red-500/30 text-xs font-mono text-stone-400 hover:text-red-400 disabled:opacity-40 transition-colors"
             >
               <XCircle className="w-3.5 h-3.5" />
