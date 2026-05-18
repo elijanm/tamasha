@@ -103,6 +103,10 @@ const config: Config = {
           "0%": { opacity: "0", transform: "translateY(8px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
         },
+        dialogOpen: {
+          "0%": { opacity: "0" },
+          "100%": { opacity: "1" },
+        },
         slideIn: {
           "0%": { opacity: "0", transform: "translateX(-16px)" },
           "100%": { opacity: "1", transform: "translateX(0)" },
@@ -119,6 +123,7 @@ const config: Config = {
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "dialog-open": "dialogOpen 0.15s ease-out",
         shimmer: "shimmer 2s infinite",
         fadeIn: "fadeIn 0.4s ease-out forwards",
         slideIn: "slideIn 0.3s ease-out forwards",

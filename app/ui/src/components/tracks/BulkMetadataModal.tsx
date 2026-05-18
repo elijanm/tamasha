@@ -103,7 +103,7 @@ export function BulkMetadataModal({ open, onClose, onImported }: Props) {
               <div className="space-y-1">
                 {[
                   ["song_id", "Immutable — do not edit"],
-                  ["folder", "R2 storage key (immutable)"],
+                  ["folder", "Music Path (do not edit)"],
                   ["title, artist_name, album…", "Edit freely"],
                   ["bpm, track_number, disc_number", "Numeric fields"],
                   ["explicit", "true / false"],
