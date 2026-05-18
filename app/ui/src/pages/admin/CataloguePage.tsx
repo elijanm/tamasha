@@ -490,12 +490,11 @@ export function CataloguePage() {
         />
       )}
 
-      {showBulk && (
-        <BulkMetadataModal
-          onClose={() => setShowBulk(false)}
-          onImported={() => refetch()}
-        />
-      )}
+      <BulkMetadataModal
+        open={showBulk}
+        onClose={() => setShowBulk(false)}
+        onImported={() => refetch()}
+      />
     </div>
   );
 }
