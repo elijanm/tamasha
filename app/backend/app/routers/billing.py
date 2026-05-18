@@ -55,13 +55,23 @@ async def gate_status(
     result = await billing_service.get_gate_status(db, user_id=str(actor.id))
     if actor.role == "superadmin":
         result.is_gated = False
+
     settings = get_settings()
-    if (
-        settings.billing_banner_accounting
-        and actor.role == "admin"
-        and "accounting" in (actor.extra_permissions or [])
-    ):
+    is_accounting = (
+        actor.role == "superadmin"
+        or (actor.role == "admin" and "accounting" in (actor.extra_permissions or []))
+    )
+    if settings.billing_banner_accounting and is_accounting and actor.role != "superadmin":
         result.show_accounting_banner = True
+
+    # Non-billing users (staff, artist, listener, plain admin) must not see
+    # invoice amounts — strip the financial details, keep only the gate state.
+    if not is_accounting:
+        result.current_invoice = None
+        result.active_arrangement = None
+        result.next_installment_amount = None
+        result.next_installment_due = None
+
     return result
 
 
