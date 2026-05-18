@@ -28,4 +28,12 @@ export const authApi = {
     const res = await api.get<User>("/auth/me");
     return res.data;
   },
+
+  forgotPassword: async (email: string): Promise<void> => {
+    await api.post("/auth/forgot-password", { email });
+  },
+
+  resetPassword: async (token: string, newPassword: string): Promise<void> => {
+    await api.post("/auth/reset-password", { token, new_password: newPassword });
+  },
 };

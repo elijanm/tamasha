@@ -126,11 +126,36 @@ function SimpleLoginForm() {
           onChange={setEmail} autoFocus autoComplete="email"
         />
 
-        <Field
-          id="password" label="Password" type="password"
-          placeholder="••••••••" value={password}
-          onChange={setPassword} autoComplete="current-password"
-        />
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="block text-[11px] font-semibold uppercase tracking-[0.1em]" style={{ color: "#9c9189" }}>
+              Password
+            </span>
+            <Link
+              to="/forgot-password"
+              className="text-[11px] font-medium transition-colors"
+              style={{ color: "#9c9189", textDecoration: "underline", textUnderlineOffset: "2px" }}
+            >
+              Forgot password?
+            </Link>
+          </div>
+          <input
+            id="password"
+            type="password"
+            placeholder="••••••••"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
+            required
+            className="w-full h-12 px-4 rounded-xl text-sm outline-none transition-all duration-150"
+            style={{
+              background: "#f8f6f3",
+              border: "1.5px solid #e5e2dc",
+              color: "#1c1917",
+              fontFamily: "'DM Sans', 'Inter', sans-serif",
+            }}
+          />
+        </div>
 
         {/* Submit */}
         <div className="pt-1">
@@ -227,9 +252,14 @@ function DefaultLoginForm() {
         </div>
 
         <div className="space-y-1.5">
-          <label className="block text-xs font-mono tracking-wider uppercase" style={{ color: "rgba(255,255,255,0.35)" }}>
-            Password
-          </label>
+          <div className="flex items-center justify-between">
+            <label className="block text-xs font-mono tracking-wider uppercase" style={{ color: "rgba(255,255,255,0.35)" }}>
+              Password
+            </label>
+            <Link to="/forgot-password" className="text-[11px] font-mono" style={{ color: "rgba(134,59,255,0.6)" }}>
+              Forgot password?
+            </Link>
+          </div>
           <Input id="password" type="password" placeholder="••••••••" value={password}
             onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password"
             className="h-10 text-sm font-body"

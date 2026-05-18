@@ -7,6 +7,8 @@ import { DashboardLayout } from "@/layouts/DashboardLayout";
 import { SettingsLayout } from "@/layouts/SettingsLayout";
 import { LoginPage } from "@/pages/auth/LoginPage";
 import { RegisterPage } from "@/pages/auth/RegisterPage";
+import { ForgotPasswordPage } from "@/pages/auth/ForgotPasswordPage";
+import { ResetPasswordPage } from "@/pages/auth/ResetPasswordPage";
 import { AdminDashboard } from "@/pages/admin/AdminDashboard";
 import { UsersPage } from "@/pages/admin/UsersPage";
 import { AuditLogsPage } from "@/pages/admin/AuditLogsPage";
@@ -64,6 +66,8 @@ function AppRoutes() {
       <Route element={<AuthLayout />}>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
       </Route>
 
       <Route element={<DashboardLayout requiredRole={["admin", "staff"]} />}>
