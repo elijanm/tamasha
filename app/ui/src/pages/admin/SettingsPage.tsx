@@ -159,8 +159,20 @@ function PoolJobRow({ job }: { job: SyncJob }) {
 
 function FingerprintIndexCard() {
   const triggerFp = useMutation({ mutationFn: adminApi.triggerFingerprintIndex });
+
+  const { data: progress } = useQuery({
+    queryKey: ["fingerprint-progress"],
+    queryFn: adminApi.fingerprintProgress,
+    refetchInterval: 5_000,
+  });
+
+  const isRunning = progress && progress.indexed > 0 && progress.indexed < progress.total;
+  const isDone    = progress && progress.total > 0 && progress.indexed >= progress.total;
+  const pct       = progress?.pct ?? 0;
+
   return (
     <Card className="p-4 space-y-3">
+      {/* Header row */}
       <div className="flex items-center justify-between gap-4">
         <div>
           <p className="text-sm font-mono text-stone-300 font-medium">Acoustic Fingerprint Index</p>
@@ -177,21 +189,47 @@ function FingerprintIndexCard() {
           {triggerFp.isPending ? "Dispatching…" : "Build Index"}
         </button>
       </div>
-      {triggerFp.isSuccess && (
-        <p className="text-xs font-mono text-emerald-400">
-          Dispatched — workers are now indexing tracks in the background.
-        </p>
+
+      {/* Progress bar */}
+      {progress && (
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between text-[10px] font-mono">
+            <span className="text-stone-500">
+              {progress.indexed.toLocaleString()} / {progress.total.toLocaleString()} tracks indexed
+            </span>
+            <span className={isDone ? "text-emerald-400" : isRunning ? "text-violet-400" : "text-stone-600"}>
+              {pct}%
+            </span>
+          </div>
+          <div className="h-1.5 bg-stone-800 rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${
+                isDone ? "bg-emerald-500" : "bg-violet-500"
+              } ${isRunning ? "animate-pulse" : ""}`}
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <div className="flex items-center justify-between text-[10px] font-mono text-stone-700">
+            {isDone ? (
+              <span className="text-emerald-500">Index complete — ready to identify tracks</span>
+            ) : isRunning ? (
+              <span className="text-violet-500">{progress.remaining.toLocaleString()} remaining…</span>
+            ) : (
+              <span>Not started</span>
+            )}
+            <a href="/recognize" target="_blank" className="text-violet-500 hover:text-violet-400 underline underline-offset-2">
+              Open /recognize →
+            </a>
+          </div>
+        </div>
+      )}
+
+      {triggerFp.isSuccess && !isRunning && (
+        <p className="text-xs font-mono text-emerald-400">Dispatched — workers are indexing in the background.</p>
       )}
       {triggerFp.isError && (
         <p className="text-xs font-mono text-red-400">Failed to trigger — is the worker running?</p>
       )}
-      <p className="text-[10px] font-mono text-stone-700">
-        Visit{" "}
-        <a href="/recognize" target="_blank" className="text-violet-500 underline underline-offset-2">
-          /recognize
-        </a>{" "}
-        to test identification after indexing completes.
-      </p>
     </Card>
   );
 }

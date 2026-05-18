@@ -26,4 +26,9 @@ export const adminApi = {
     const res = await api.post<{ message: string; task_id: string | null }>("/admin/fingerprint-index");
     return res.data;
   },
+
+  fingerprintProgress: async (): Promise<{ indexed: number; total: number; remaining: number; pct: number }> => {
+    const res = await api.get<{ indexed: number; total: number; remaining: number; pct: number }>("/admin/fingerprint-progress");
+    return res.data;
+  },
 };

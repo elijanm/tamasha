@@ -105,3 +105,18 @@ async def trigger_fingerprint_index(
     except Exception:
         task_id = None
     return {"message": "Fingerprint indexing triggered", "task_id": task_id}
+
+
+@router.get("/fingerprint-progress")
+async def fingerprint_progress(
+    _actor: UserDocument = _admin_read,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+) -> dict:
+    total = await db["tracks"].count_documents({"status": {"$nin": ["archived", "deleted"]}})
+    indexed = await db["tracks"].count_documents({"fingerprinted": True})
+    return {
+        "indexed": indexed,
+        "total": total,
+        "remaining": total - indexed,
+        "pct": round(indexed / total * 100, 1) if total else 0.0,
+    }
