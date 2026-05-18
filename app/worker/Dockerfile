@@ -12,4 +12,4 @@ RUN pip install --no-cache-dir -e .
 
 COPY worker/ ./worker/
 
-CMD ["celery", "-A", "worker.celery_app", "worker", "--loglevel=info", "--concurrency=8", "-Q", "default,transcoding,sync,email,backup"]
+CMD ["celery", "-A", "worker.celery_app", "worker", "--loglevel=info", "--concurrency=4", "-Q", "default,transcoding,sync,email,backup"]
