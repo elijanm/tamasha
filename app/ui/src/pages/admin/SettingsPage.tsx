@@ -157,6 +157,61 @@ function PoolJobRow({ job }: { job: SyncJob }) {
   );
 }
 
+function FingerprintIndexSection({ role }: { role: string | null }) {
+  const isSuperadmin = role === "superadmin";
+  const qc = useQueryClient();
+
+  const { data: visData } = useQuery({
+    queryKey: ["fingerprint-visible"],
+    queryFn: adminApi.getFingerprintVisible,
+  });
+
+  const toggleVis = useMutation({
+    mutationFn: (v: boolean) => adminApi.setFingerprintVisible(v),
+    onSuccess: (data) => qc.setQueryData(["fingerprint-visible"], data),
+  });
+
+  const visible = visData?.visible ?? true;
+
+  if (!visible && !isSuperadmin) return null;
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xs font-mono font-semibold text-stone-600 uppercase tracking-widest">
+          Fingerprint Index
+        </h2>
+        {isSuperadmin && (
+          <button
+            onClick={() => toggleVis.mutate(!visible)}
+            disabled={toggleVis.isPending}
+            className={`flex items-center gap-1.5 text-xs font-mono transition-colors ${
+              visible ? "text-violet-400 hover:text-stone-400" : "text-stone-600 hover:text-violet-400"
+            }`}
+          >
+            {visible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+            {visible ? "Visible to admins" : "Hidden from admins"}
+          </button>
+        )}
+      </div>
+      {visible && <FingerprintIndexCard />}
+      {!visible && isSuperadmin && (
+        <p className="text-[10px] font-mono text-stone-700 italic">
+          Section hidden from admins — only superadmin can see this.
+        </p>
+      )}
+    </section>
+  );
+}
+
+function fmtEta(sec: number): string {
+  if (sec < 60)   return `${sec}s`;
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ${sec % 60}s`;
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  return `${h}h ${m}m`;
+}
+
 function FingerprintIndexCard() {
   const triggerFp = useMutation({ mutationFn: adminApi.triggerFingerprintIndex });
 
@@ -190,43 +245,53 @@ function FingerprintIndexCard() {
         </button>
       </div>
 
-      {/* Progress bar */}
+      {/* Progress bar + stats */}
       {progress && (
-        <div className="space-y-1.5">
+        <div className="space-y-2">
+          {/* Counts + pct */}
           <div className="flex items-center justify-between text-[10px] font-mono">
-            <span className="text-stone-500">
-              {progress.indexed.toLocaleString()} / {progress.total.toLocaleString()} tracks indexed
+            <span className="text-stone-400">
+              {progress.indexed.toLocaleString()}
+              <span className="text-stone-600"> / {progress.total.toLocaleString()} tracks</span>
             </span>
             <span className={isDone ? "text-emerald-400" : isRunning ? "text-violet-400" : "text-stone-600"}>
               {pct}%
             </span>
           </div>
+
+          {/* Bar */}
           <div className="h-1.5 bg-stone-800 rounded-full overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all duration-500 ${
-                isDone ? "bg-emerald-500" : "bg-violet-500"
-              } ${isRunning ? "animate-pulse" : ""}`}
-              style={{ width: `${pct}%` }}
+              className={`h-full rounded-full transition-all duration-500 ${isDone ? "bg-emerald-500" : "bg-violet-500"} ${isRunning ? "animate-pulse" : ""}`}
+              style={{ width: `${Math.max(pct, pct > 0 ? 1 : 0)}%` }}
             />
           </div>
-          <div className="flex items-center justify-between text-[10px] font-mono text-stone-700">
-            {isDone ? (
-              <span className="text-emerald-500">Index complete — ready to identify tracks</span>
-            ) : isRunning ? (
-              <span className="text-violet-500">{progress.remaining.toLocaleString()} remaining…</span>
-            ) : (
-              <span>Not started</span>
-            )}
-            <a href="/recognize" target="_blank" className="text-violet-500 hover:text-violet-400 underline underline-offset-2">
-              Open /recognize →
-            </a>
+
+          {/* Speed + ETA row */}
+          <div className="flex items-center justify-between text-[10px] font-mono">
+            <div className="flex items-center gap-3">
+              {progress.speed_mbps != null && (
+                <span className="text-stone-500">
+                  <span className="text-stone-300">{progress.speed_mbps}</span> MB/s
+                </span>
+              )}
+              {progress.bytes_done_mb != null && (
+                <span className="text-stone-600">{progress.bytes_done_mb} MB processed</span>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              {isRunning && progress.eta_seconds != null && (
+                <span className="text-violet-400">~{fmtEta(progress.eta_seconds)} left</span>
+              )}
+              {isDone && <span className="text-emerald-500">Complete</span>}
+              <a href="/recognize" target="_blank" className="text-violet-500 hover:text-violet-400 underline underline-offset-2">
+                /recognize →
+              </a>
+            </div>
           </div>
         </div>
       )}
 
-      {triggerFp.isSuccess && !isRunning && (
-        <p className="text-xs font-mono text-emerald-400">Dispatched — workers are indexing in the background.</p>
-      )}
       {triggerFp.isError && (
         <p className="text-xs font-mono text-red-400">Failed to trigger — is the worker running?</p>
       )}
@@ -660,12 +725,7 @@ export function SettingsPage() {
       </section>}
 
       {/* ── Fingerprint Index ───────────────────────────────────────────── */}
-      {!isStaff && <section className="space-y-3">
-        <h2 className="text-xs font-mono font-semibold text-stone-600 uppercase tracking-widest">
-          Fingerprint Index
-        </h2>
-        <FingerprintIndexCard />
-      </section>}
+      {!isStaff && <FingerprintIndexSection role={role} />}
 
       {/* ── Configurable Metrics ────────────────────────────────────────── */}
       <section className="space-y-3">

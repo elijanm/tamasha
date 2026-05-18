@@ -94,6 +94,34 @@ async def trigger_reindex(
     return {"message": "Reindex triggered", "task_id": task_id}
 
 
+_FINGERPRINT_SETTING_KEY = "fingerprint_index_visible"
+_superadmin = require_permission("billing.manage")  # only superadmin has this
+
+
+@router.get("/settings/fingerprint-visible")
+async def get_fingerprint_visible(
+    _actor: UserDocument = _admin_read,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+) -> dict:
+    doc = await db["settings"].find_one({"key": _FINGERPRINT_SETTING_KEY})
+    return {"visible": doc.get("value", True) if doc else True}
+
+
+@router.patch("/settings/fingerprint-visible")
+async def set_fingerprint_visible(
+    body: dict,
+    _actor: UserDocument = _superadmin,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+) -> dict:
+    visible = bool(body.get("visible", True))
+    await db["settings"].update_one(
+        {"key": _FINGERPRINT_SETTING_KEY},
+        {"$set": {"key": _FINGERPRINT_SETTING_KEY, "value": visible}},
+        upsert=True,
+    )
+    return {"visible": visible}
+
+
 @router.post("/fingerprint-index", status_code=202)
 async def trigger_fingerprint_index(
     _actor: UserDocument = _admin,
@@ -112,11 +140,56 @@ async def fingerprint_progress(
     _actor: UserDocument = _admin_read,
     db: AsyncIOMotorDatabase = Depends(get_db),
 ) -> dict:
-    total = await db["tracks"].count_documents({"status": {"$nin": ["archived", "deleted"]}})
+    from datetime import datetime, timezone
+
+    total   = await db["tracks"].count_documents({"status": {"$nin": ["archived", "deleted"]}})
     indexed = await db["tracks"].count_documents({"fingerprinted": True})
+
+    speed_mbps: float | None = None
+    eta_seconds: int | None  = None
+    bytes_done_mb: float | None = None
+
+    if indexed > 0:
+        # Aggregate bytes + earliest fingerprinted_at from indexed tracks
+        done_agg = await db["tracks"].aggregate([
+            {"$match": {"fingerprinted": True}},
+            {"$group": {
+                "_id": None,
+                "bytes": {"$sum": "$file_size_bytes"},
+                "started": {"$min": "$fingerprinted_at"},
+            }},
+        ]).to_list(1)
+
+        if done_agg:
+            row = done_agg[0]
+            bytes_done  = row.get("bytes", 0) or 0
+            started_at  = row.get("started")
+            now         = datetime.now(timezone.utc)
+
+            if started_at and bytes_done > 0:
+                elapsed = max((now - started_at).total_seconds(), 1)
+                bytes_per_sec = bytes_done / elapsed
+                speed_mbps    = round(bytes_per_sec / (1024 * 1024), 2)
+                bytes_done_mb = round(bytes_done / (1024 * 1024), 1)
+
+                # Aggregate remaining bytes
+                rem_agg = await db["tracks"].aggregate([
+                    {"$match": {
+                        "fingerprinted": {"$ne": True},
+                        "status": {"$nin": ["archived", "deleted"]},
+                    }},
+                    {"$group": {"_id": None, "bytes": {"$sum": "$file_size_bytes"}}},
+                ]).to_list(1)
+
+                if rem_agg and bytes_per_sec > 0:
+                    eta_seconds = int((rem_agg[0].get("bytes", 0) or 0) / bytes_per_sec)
+
     return {
-        "indexed": indexed,
-        "total": total,
-        "remaining": total - indexed,
-        "pct": round(indexed / total * 100, 1) if total else 0.0,
+        "indexed":       indexed,
+        "total":         total,
+        "remaining":     total - indexed,
+        "pct":           round(indexed / total * 100, 1) if total else 0.0,
+        "speed_mbps":    speed_mbps,
+        "bytes_done_mb": bytes_done_mb,
+        "eta_seconds":   eta_seconds,
     }

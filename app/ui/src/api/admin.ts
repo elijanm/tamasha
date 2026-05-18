@@ -27,8 +27,21 @@ export const adminApi = {
     return res.data;
   },
 
-  fingerprintProgress: async (): Promise<{ indexed: number; total: number; remaining: number; pct: number }> => {
-    const res = await api.get<{ indexed: number; total: number; remaining: number; pct: number }>("/admin/fingerprint-progress");
+  getFingerprintVisible: async (): Promise<{ visible: boolean }> => {
+    const res = await api.get<{ visible: boolean }>("/admin/settings/fingerprint-visible");
+    return res.data;
+  },
+
+  setFingerprintVisible: async (visible: boolean): Promise<{ visible: boolean }> => {
+    const res = await api.patch<{ visible: boolean }>("/admin/settings/fingerprint-visible", { visible });
+    return res.data;
+  },
+
+  fingerprintProgress: async (): Promise<{
+    indexed: number; total: number; remaining: number; pct: number;
+    speed_mbps: number | null; bytes_done_mb: number | null; eta_seconds: number | null;
+  }> => {
+    const res = await api.get("/admin/fingerprint-progress");
     return res.data;
   },
 };

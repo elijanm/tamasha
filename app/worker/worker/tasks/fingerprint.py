@@ -66,9 +66,14 @@ def fingerprint_track(self: Task, track_id: str) -> dict:
         store.put(tid_bytes, fps)
         store.close()
 
+        from datetime import datetime, timezone
         db["tracks"].update_one(
             {"_id": ObjectId(track_id)},
-            {"$set": {"fingerprinted": True, "fingerprint_count": len(fps)}},
+            {"$set": {
+                "fingerprinted": True,
+                "fingerprint_count": len(fps),
+                "fingerprinted_at": datetime.now(timezone.utc),
+            }},
         )
         logger.info("fingerprint.indexed", track_id=track_id, count=len(fps))
         return {"status": "ok", "fingerprints": len(fps)}
