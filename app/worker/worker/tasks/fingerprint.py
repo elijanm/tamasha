@@ -17,8 +17,18 @@ from worker.storage.r2 import download_to_file
 logger = structlog.get_logger(__name__)
 
 
-def _store() -> FingerprintStore:
-    return FingerprintStore(get_settings().fingerprint_db_path)
+def _store(max_attempts: int = 15) -> FingerprintStore:
+    import random, time
+    path = get_settings().fingerprint_db_path
+    for i in range(max_attempts):
+        try:
+            return FingerprintStore(path)
+        except Exception as exc:
+            if "LOCK" in str(exc) or "temporarily unavailable" in str(exc).lower():
+                time.sleep(1.0 + random.random() * 2.0)
+                continue
+            raise
+    raise RuntimeError("Could not acquire RocksDB write lock after retries")
 
 
 @app.task(bind=True, max_retries=3, default_retry_delay=60,
@@ -87,17 +97,13 @@ def fingerprint_all() -> dict:
 
     cursor = db["tracks"].find(
         {
-            "$and": [
-                {"$or": [
-                    {"is_canonical": True},
-                    {"duplicate_group_id": {"$exists": False}},
-                ]},
-                {"$or": [
-                    {"r2_key_transcoded": {"$exists": True, "$ne": ""}},
-                    {"r2_key_raw": {"$exists": True, "$ne": ""}},
-                ]},
+            "$or": [
+                {"is_canonical": True},
+                {"duplicate_group_id": None},
+                {"duplicate_group_id": {"$exists": False}},
             ],
             "status": {"$nin": ["archived", "deleted"]},
+            "r2_key_raw": {"$exists": True, "$ne": ""},
         },
         {"_id": 1},
     )

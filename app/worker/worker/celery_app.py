@@ -50,6 +50,7 @@ app.conf.update(
         "worker.tasks.dedup.*": {"queue": "default"},
         "worker.tasks.analytics.*": {"queue": "analytics"},
         "worker.tasks.metadata.*": {"queue": "default"},
+        "worker.tasks.fingerprint.*": {"queue": "default"},
     },
     beat_schedule={
         "incremental-sync": {

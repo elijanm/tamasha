@@ -14,7 +14,7 @@ HOP_LENGTH = 512
 FAN_VALUE = 15
 MAX_HASH_TIME_DELTA = 200
 PEAK_NEIGHBORHOOD = 20
-AMPLITUDE_FLOOR = 10.0  # dB
+PEAK_PERCENTILE = 75  # only keep peaks above this percentile of the spectrogram
 
 
 def fingerprint_file(path: str) -> list[tuple[int, int]]:
@@ -63,7 +63,8 @@ def _fingerprint_pcm(samples: np.ndarray) -> list[tuple[int, int]]:
 
     struct_el = np.ones((PEAK_NEIGHBORHOOD, PEAK_NEIGHBORHOOD))
     local_max = maximum_filter(Sxx_db, footprint=struct_el) == Sxx_db
-    freq_idxs, time_idxs = np.where(local_max & (Sxx_db > AMPLITUDE_FLOOR))
+    floor = float(np.percentile(Sxx_db, PEAK_PERCENTILE))
+    freq_idxs, time_idxs = np.where(local_max & (Sxx_db > floor))
 
     peaks = sorted(zip(freq_idxs.tolist(), time_idxs.tolist()), key=lambda p: p[1])
 
