@@ -137,4 +137,34 @@ export const tracksApi = {
     const res = await api.patch<SkizaClip>(`/tracks/skiza-clips/${clipId}`, { status });
     return res.data;
   },
+
+  exportCsv: async (): Promise<void> => {
+    const token = getToken();
+    const res = await fetch(`/api/v1/tracks/export-csv`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error(`Export failed: HTTP ${res.status}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "tamasha_catalogue.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+
+  importCsv: async (
+    file: File,
+    onProgress?: (pct: number) => void,
+  ): Promise<{ updated: number; skipped: number; errors: Array<{ row: number; song_id: string; error: string }> }> => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await api.post("/tracks/import-csv", form, {
+      headers: { "Content-Type": "multipart/form-data" },
+      onUploadProgress: onProgress
+        ? (e) => { if (e.total) onProgress(Math.round((e.loaded / e.total) * 100)); }
+        : undefined,
+    });
+    return res.data;
+  },
 };

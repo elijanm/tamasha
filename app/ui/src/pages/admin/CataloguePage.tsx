@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Search, Filter, RefreshCw, AlertTriangle, User,
-  ChevronLeft, ChevronRight, Info, Play, Pause, Loader2, Music2, Plus, Disc3,
+  ChevronLeft, ChevronRight, Info, Play, Pause, Loader2, Music2, Plus, Disc3, FileSpreadsheet,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { TrackDetailSheet } from "@/components/tracks/TrackDetailSheet";
 import { TrackCreateSheet } from "@/components/tracks/TrackCreateSheet";
+import { BulkMetadataModal } from "@/components/tracks/BulkMetadataModal";
 import { tracksApi } from "@/api/tracks";
 import { usePlayerStore, _audio } from "@/store/player";
 import { formatCount } from "@/utils/format";
@@ -52,6 +53,7 @@ export function CataloguePage() {
   const [skip, setSkip] = useState(0);
   const [selected, setSelected] = useState<Track | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showBulk, setShowBulk] = useState(false);
   const [view, setView] = useState<"tracks" | "albums">("tracks");
 
   // Global player state — no local audio state
@@ -149,6 +151,15 @@ export function CataloguePage() {
             className="h-8 text-xs bg-violet-600 hover:bg-violet-500 text-white border-0 gap-1.5"
           >
             <Plus className="h-3.5 w-3.5" /> Add Track
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowBulk(true)}
+            className="h-8 text-xs gap-1.5"
+            title="Bulk metadata update via CSV"
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5" /> Bulk Update
           </Button>
           <Button
             variant="outline"
@@ -476,6 +487,13 @@ export function CataloguePage() {
         <TrackCreateSheet
           onClose={() => setShowCreate(false)}
           onCreated={() => refetch()}
+        />
+      )}
+
+      {showBulk && (
+        <BulkMetadataModal
+          onClose={() => setShowBulk(false)}
+          onImported={() => refetch()}
         />
       )}
     </div>

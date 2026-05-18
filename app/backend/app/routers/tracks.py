@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import hashlib
 import io
 import zipfile
@@ -303,6 +304,172 @@ async def upload_album_zip(
             })
 
     return {"tracks": tracks, "count": len(tracks)}
+
+
+_CSV_COLUMNS = [
+    "song_id", "title", "folder",
+    "artist_name", "album", "year", "genre", "language",
+    "isrc", "label", "composer", "publisher", "copyright",
+    "featuring", "band", "producer", "remixer",
+    "bpm", "musical_key", "mood", "version",
+    "release_date", "track_number", "disc_number",
+    "upc", "catalogue_number", "explicit", "tags",
+]
+
+# Fields that map 1-to-1 from CSV column → TrackUpdateRequest field name
+_SIMPLE_META_FIELDS = {
+    "album", "genre", "language", "isrc", "label", "composer", "publisher",
+    "copyright", "featuring", "band", "producer", "remixer", "musical_key",
+    "mood", "version", "release_date", "upc", "catalogue_number",
+}
+
+
+@router.get("/export-csv")
+async def export_catalogue_csv(
+    _actor: UserDocument = require_permission("track.read"),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+) -> StreamingResponse:
+    """Download a prefilled CSV of all catalogue tracks."""
+
+    async def _generate():
+        buf = io.StringIO()
+        writer = csv.DictWriter(buf, fieldnames=_CSV_COLUMNS)
+        writer.writeheader()
+        yield buf.getvalue()
+
+        async for doc in db["tracks"].find({}, {
+            "_id": 1, "title": 1, "r2_key_raw": 1, "artist_name_raw": 1,
+            "album": 1, "year": 1, "genre": 1, "language": 1,
+            "isrc": 1, "label": 1, "composer": 1, "publisher": 1, "copyright": 1,
+            "featuring": 1, "band": 1, "producer": 1, "remixer": 1,
+            "bpm": 1, "musical_key": 1, "mood": 1, "version": 1,
+            "release_date": 1, "track_number": 1, "disc_number": 1,
+            "upc": 1, "catalogue_number": 1, "explicit": 1, "tags": 1,
+        }):
+            buf = io.StringIO()
+            writer = csv.DictWriter(buf, fieldnames=_CSV_COLUMNS)
+            writer.writerow({
+                "song_id": str(doc["_id"]),
+                "title": doc.get("title", ""),
+                "folder": doc.get("r2_key_raw", ""),
+                "artist_name": doc.get("artist_name_raw") or "",
+                "album": doc.get("album") or "",
+                "year": doc.get("year") or "",
+                "genre": doc.get("genre") or "",
+                "language": doc.get("language") or "",
+                "isrc": doc.get("isrc") or "",
+                "label": doc.get("label") or "",
+                "composer": doc.get("composer") or "",
+                "publisher": doc.get("publisher") or "",
+                "copyright": doc.get("copyright") or "",
+                "featuring": doc.get("featuring") or "",
+                "band": doc.get("band") or "",
+                "producer": doc.get("producer") or "",
+                "remixer": doc.get("remixer") or "",
+                "bpm": doc.get("bpm") or "",
+                "musical_key": doc.get("musical_key") or "",
+                "mood": doc.get("mood") or "",
+                "version": doc.get("version") or "",
+                "release_date": doc.get("release_date") or "",
+                "track_number": doc.get("track_number") or "",
+                "disc_number": doc.get("disc_number") or "",
+                "upc": doc.get("upc") or "",
+                "catalogue_number": doc.get("catalogue_number") or "",
+                "explicit": "true" if doc.get("explicit") else "false",
+                "tags": ",".join(doc.get("tags") or []),
+            })
+            yield buf.getvalue()
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=tamasha_catalogue.csv"},
+    )
+
+
+@router.post("/import-csv")
+async def import_catalogue_csv(
+    request: Request,
+    file: UploadFile = File(...),
+    actor: UserDocument = require_permission("track.write"),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+) -> dict:
+    """Upload a filled-in CSV and bulk-update track metadata."""
+    from bson import ObjectId as _OID
+
+    data = await file.read()
+    try:
+        text = data.decode("utf-8-sig")  # handle BOM from Excel
+    except UnicodeDecodeError:
+        text = data.decode("latin-1")
+
+    reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames or "song_id" not in reader.fieldnames:
+        raise HTTPException(400, "CSV must have a 'song_id' column")
+
+    updated = 0
+    skipped = 0
+    errors: list[dict] = []
+
+    for i, row in enumerate(reader, start=2):  # row 1 = header
+        song_id = (row.get("song_id") or "").strip()
+        if not song_id:
+            skipped += 1
+            continue
+
+        try:
+            oid = _OID(song_id)
+        except Exception:
+            errors.append({"row": i, "song_id": song_id, "error": "Invalid song_id"})
+            continue
+
+        patch: dict = {}
+
+        # Title
+        if row.get("title", "").strip():
+            patch["title"] = row["title"].strip()
+
+        # Simple string fields
+        for col in _SIMPLE_META_FIELDS:
+            if col in row and row[col].strip():
+                patch[col] = row[col].strip()
+
+        # Numeric fields
+        for col, typ in (("year", int), ("track_number", int), ("disc_number", int), ("bpm", float)):
+            val = (row.get(col) or "").strip()
+            if val:
+                try:
+                    patch[col] = typ(val)
+                except ValueError:
+                    errors.append({"row": i, "song_id": song_id, "error": f"Invalid {col}: {val!r}"})
+
+        # Bool
+        explicit_raw = (row.get("explicit") or "").strip().lower()
+        if explicit_raw in ("true", "1", "yes"):
+            patch["explicit"] = True
+        elif explicit_raw in ("false", "0", "no"):
+            patch["explicit"] = False
+
+        # Tags list
+        tags_raw = (row.get("tags") or "").strip()
+        if tags_raw:
+            patch["tags"] = [t.strip() for t in tags_raw.split(",") if t.strip()]
+
+        if not patch:
+            skipped += 1
+            continue
+
+        patch["updated_at"] = utc_now()
+        try:
+            result = await db["tracks"].update_one({"_id": oid}, {"$set": patch})
+            if result.matched_count == 0:
+                errors.append({"row": i, "song_id": song_id, "error": "Track not found"})
+            else:
+                updated += 1
+        except Exception as exc:
+            errors.append({"row": i, "song_id": song_id, "error": str(exc)})
+
+    return {"updated": updated, "skipped": skipped, "errors": errors[:50]}
 
 
 @router.post("/", response_model=TrackResponse, status_code=201)
